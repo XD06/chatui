@@ -9,6 +9,9 @@ import ElementPlus from 'element-plus'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import 'element-plus/dist/index.css'
 
+// 导入主题变量
+import './assets/themes/variables.css'
+
 // 导入并初始化Mermaid
 import mermaid from 'mermaid'
 import { reinitializeMermaidTheme, renderMermaidDiagrams } from './utils/mermaid-plugin'
@@ -46,9 +49,8 @@ app.mount('#app')
 
 // 延迟加载非关键资源
 setTimeout(() => {
-  // 异步加载代码高亮样式（可以延迟）
-  import('highlight.js/styles/github-dark.css')
-    .catch(error => console.error('Failed to load syntax highlighting:', error))
+  // 已在 markdown.js 中导入样式，避免样式冲突
+  // import('highlight.js/styles/github-dark.css')
   
   // 从设置中获取当前主题模式并更新Mermaid配置
   import('./stores/settings').then(({ useSettingsStore }) => {

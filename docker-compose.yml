@@ -1,0 +1,35 @@
+version: '3'
+
+services:
+  yourchat:
+    build: .
+    container_name: yourchat
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    # 如果需要持久化存储，可以取消注释以下内容
+    # volumes:
+    #   - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+      # 其他默认环境变量可以在这里设置
+
+  # Optional: Add backend API service if needed
+  # api:
+  #   build: 
+  #     context: .
+  #     dockerfile: api.Dockerfile
+  #   container_name: yourcaht-api
+  #   ports:
+  #     - "3001:3000"
+  #   restart: unless-stopped
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     - NODE_ENV=production 
+
+networks:
+  yourcaht-network:
+    driver: bridge 

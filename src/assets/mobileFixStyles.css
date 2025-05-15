@@ -50,6 +50,54 @@ div[role="button"],
   .mobile-input:focus {
     background-color: transparent !important;
   }
+  
+  /* 隐藏头像 */
+  .message-container .avatar {
+    display: none !important;
+  }
+  
+  /* 让各自消息独占屏幕 */
+  .message-container {
+    width: 100% !important;
+    margin-bottom: 16px !important;
+  }
+  
+  /* 用户消息靠右占据整个宽度 */
+  .message-container.role-user {
+    justify-content: flex-end !important;
+  }
+  
+  /* AI消息靠左占据整个宽度 */
+  .message-container.role-assistant {
+    justify-content: flex-start !important;
+  }
+  
+  /* 消息内容宽度适应，但不超出屏幕 */
+  .message-container .message-content {
+    max-width: 100% !important;
+    width: fit-content !important;
+  }
+  
+  /* 确保消息气泡内容不超出屏幕 */
+  .message-bubble {
+    max-width: 85vw !important;
+    width: fit-content !important;
+    box-sizing: border-box !important;
+    overflow-wrap: break-word !important;
+    word-wrap: break-word !important;
+  }
+  
+  /* 确保代码块不溢出 */
+  .message-bubble pre {
+    max-width: 100% !important;
+    overflow-x: auto !important;
+  }
+  
+  /* 确保图片不溢出 */
+  .message-bubble img {
+    max-width: 100% !important;
+    height: auto !important;
+  }
 }
 
 /* Fix for Element Plus inputs */

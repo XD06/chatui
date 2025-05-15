@@ -140,7 +140,7 @@
    // padding: 12px;
     width: 100%;
     contain: content; /* 添加包含优化 */
-    min-height: 100px!important;
+    min-height: 100px;
   }
 
   .mermaid-header {
@@ -448,17 +448,16 @@ table {
   border-collapse: separate;
   border-spacing: 0;
   border-radius: 10px;
-  overflow: hidden;
+  overflow: auto;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   font-size: 0.95rem;
   line-height: 1.5;
   background-color: #fff;
-  /* 移除动画和初始透明度 */
+  scrollbar-width: thin;/* 移除动画和初始透明度 */
   opacity: 1;
   animation: none !important;
   transition: none !important;
   display: table;
-  overflow-x: auto;
   white-space: normal;
   transform: translateZ(0);
   contain: content;
@@ -949,13 +948,12 @@ table {
   border-collapse: separate;
   border-spacing: 0;
   border-radius: 8px;
-  overflow: hidden;
+  overflow: auto;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   font-size: 0.95rem;
   line-height: 1.5;
   background-color: #fff;
   display: table;
-  overflow-x: auto;
   white-space: normal;
 }
 

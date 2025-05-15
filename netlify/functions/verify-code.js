@@ -13,6 +13,15 @@ exports.handler = async function(event, context) {
     const { code } = body;
     const websiteCode = process.env.WEBSITE_CODE;
     
+    // 如果网站访问密码未设置或为空，则跳过验证，直接返回有效
+    if (!websiteCode || websiteCode.trim() === '') {
+      console.log('网站访问密码未设置或为空，跳过验证');
+      return { 
+        statusCode: 200, 
+        body: JSON.stringify({ valid: true }) 
+      };
+    }
+    
     // 验证访问码
     if (code === websiteCode) {
       return { 

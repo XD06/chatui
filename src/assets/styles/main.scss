@@ -256,3 +256,58 @@ body {
   --scrollbar-thumb-hover-bg: #777777;
 }
 */
+
+/* 优化代码块样式，防止高亮闪烁 */
+.hljs {
+  transition: none !important; /* 禁用所有transition效果 */
+  animation: none !important; /* 禁用所有animation效果 */
+}
+
+// 添加对静态代码块的专有样式
+.code-block-static {
+  contain: content; /* 使用内容隔离优化 */
+  isolation: isolate; /* 创建一个新的层叠上下文，防止样式冲突 */
+  backface-visibility: hidden; /* 防止3D转换导致的闪烁 */
+  
+  /* 禁用所有可能的布局重新计算 */
+  transform: translateZ(0);
+  
+  code.hljs-static {
+    /* 确保代码内容不被动画影响 */
+    transition: none !important;
+    animation: none !important;
+    contain: strict; /* 最严格的内容隔离 */
+    outline: none !important;
+    
+    /* 禁用任何可能的滚动动画 */
+    overflow-anchor: none;
+    overscroll-behavior: none;
+  }
+}
+
+pre.code-block {
+  position: relative;
+  margin: 1em 0;
+  border-radius: 8px;
+  background: #282c34;
+  transition: none !important; /* 禁用过渡效果 */
+  
+  code {
+    transition: none !important; /* 禁用过渡效果 */
+    will-change: auto; /* 不使用will-change优化 */
+    contain: none; /* 不使用内容隔离 */
+  }
+  
+  /* 禁用所有代码高亮类的动画和过渡效果 */
+  .hljs, .hljs-tag, .hljs-keyword, .hljs-selector-tag, 
+  .hljs-literal, .hljs-strong, .hljs-name, .hljs-code, 
+  .hljs-attribute, .hljs-symbol, .hljs-regexp, 
+  .hljs-link, .hljs-string, .hljs-bullet, .hljs-subst, 
+  .hljs-title, .hljs-section, .hljs-emphasis, .hljs-type, 
+  .hljs-built_in, .hljs-builtin-name, .hljs-selector-attr, 
+  .hljs-selector-pseudo, .hljs-addition, .hljs-variable, 
+  .hljs-template-tag, .hljs-template-variable, .hljs-deletion, .hljs-comment {
+    transition: none !important;
+    animation: none !important;
+  }
+}

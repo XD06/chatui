@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  app:
+    image: yourcaht-app
+    container_name: yourcaht-app
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+    networks:
+      - yourcaht-network
+    # 设置资源限制（根据您服务器的实际情况调整）
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+networks:
+  yourcaht-network:
+    driver: bridge 

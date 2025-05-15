@@ -6,10 +6,10 @@
       `role-${message.role}`,
       { 'regenerating': message.loading },
       { 'latest-message': isLatestMessage && message.role === 'assistant' },
-      { 'completed': messageCompleted },
-      { 'history-message': !isLatestMessage || messageCompleted }
+      { 'completed': isMessageComplete },
+      { 'history-message': !isLatestMessage || isMessageComplete }
     ]"
-    :data-message-status="isLatestMessage && !messageCompleted ? 'generating' : 'completed'"
+    :data-message-status="isLatestMessage && !isMessageComplete ? 'generating' : 'completed'"
   >
     <!-- AI头像（只在AI消息时显示在左侧） -->
     <div v-if="message.role === 'assistant'" class="avatar assistant-avatar">
@@ -105,9 +105,11 @@
           <div v-else class="message-display" v-html="formatContent"></div>
         </div>
         
-        <!-- Token Count Badge -->
-        <div v-if="message.role === 'assistant' && message.tokenCount" class="token-count">
-          {{ message.tokenCount }} tokens
+        <!-- 消息统计信息 -->
+        <div v-if="message.role === 'assistant' && isMessageComplete" class="message-stats">
+          <span v-if="message.tokenCount" class="stat-item">Tokens:{{ message.tokenCount }}</span>
+          <span v-if="message.firstResponseTime" class="stat-item" title="首次响应时间 - 从发送请求到收到第一个数据包的延迟">FR: {{ formatResponseTime(message.firstResponseTime - message.startTimestamp) }}</span>
+          <span v-if="message.responseTime" class="stat-item" title="完成时间 - 从发送请求到消息完全接收完成的总时间">CT: {{ formatResponseTime(message.responseTime) }}</span>
         </div>
       </div>
 
@@ -137,7 +139,7 @@
         
         <!-- AI消息的操作 -->
         <template v-else>
-          <el-dropdown trigger="click" @command="handleAssistantCommand">
+          <el-dropdown trigger="click" @command="handleAssistantCommand" style="border: none;">
             <el-button class="action-button" size="small" type="link">
               <el-icon><MoreFilled /></el-icon>
             </el-button>
@@ -212,16 +214,20 @@ const mdOptions = {
   linkify: true,
   typographer: true,
   highlight: function (str, lang) {
-    // Simple highlighting without causing flickering
+    // 优化的高亮功能，避免闪烁
     if (lang && hljs.getLanguage(lang)) {
       try {
-        // Use simpler highlighting that doesn't cause layout shifts
-        const highlighted = hljs.highlight(str, { language: lang, ignoreIllegals: true }).value;
+        // 使用一次性渲染方式，不设置任何过渡效果
+        const highlighted = hljs.highlight(str, { 
+          language: lang, 
+          ignoreIllegals: true 
+        }).value;
         
         // 计算行数，但不设置固定高度，让代码块自适应内容
         const lineCount = str.split('\n').length;
         
-        return `<pre class="code-block" data-lang="${lang}" data-line-count="${lineCount}">
+        // 使用不含过渡和动画效果的HTML结构
+        return `<pre class="code-block code-block-static" data-lang="${lang}" data-line-count="${lineCount}">
           <div class="code-header">
             <span class="code-lang">${lang}</span>
             <div class="code-actions">
@@ -240,18 +246,18 @@ const mdOptions = {
               </button>
             </div>
           </div>
-          <code>${highlighted}</code>
+          <code class="hljs-static">${highlighted}</code>
         </pre>`;
       } catch (error) {
         console.error('Highlight error:', error);
-        return `<pre class="code-block"><code>${md.utils.escapeHtml(str)}</code></pre>`;
+        return `<pre class="code-block code-block-static"><code class="hljs-static">${md.utils.escapeHtml(str)}</code></pre>`;
       }
     }
     
     // For unknown languages
     const lineCount = str.split('\n').length;
     
-    return `<pre class="code-block" data-lang="plaintext" data-line-count="${lineCount}">
+    return `<pre class="code-block code-block-static" data-lang="plaintext" data-line-count="${lineCount}">
       <div class="code-header">
         <span class="code-lang">plaintext</span>
         <div class="code-actions">
@@ -263,7 +269,7 @@ const mdOptions = {
           </button>
         </div>
       </div>
-      <code>${md.utils.escapeHtml(str)}</code>
+      <code class="hljs-static">${md.utils.escapeHtml(str)}</code>
     </pre>`;
   }
 };
@@ -324,14 +330,16 @@ const handleUserCommand = (command) => {
 const handleAssistantCommand = (command) => {
   switch (command) {
     case 'regenerate':
-      emit('regenerate', props.message)
-      break
+      // 确保传递完整的消息对象
+      console.log('[DEBUG] 发出重新生成事件，消息:', props.message);
+      emit('regenerate', props.message);
+      break;
     case 'copy':
-      handleCopy()
-      break
+      handleCopy();
+      break;
     case 'delete':
-      handleDelete()
-      break
+      handleDelete();
+      break;
   }
 }
 
@@ -454,10 +462,24 @@ const formatThinkingContent = computed(() => {
 // 格式化时间
 const formatTime = (timestamp) => {
   if (!timestamp) return ''
-  
   const date = new Date(timestamp)
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return date.toLocaleString()
 }
+
+// 格式化响应时间
+const formatResponseTime = (ms) => {
+  if (!ms) return '';
+  if (ms < 1000) {
+    return `${Math.round(ms)}ms`
+  } else {
+    return `${(ms / 1000).toFixed(2)}s`
+  }
+}
+
+// 消息是否已完成 - 计算属性
+const isMessageComplete = computed(() => {
+  return !props.message.loading && props.message.content && props.message.completed
+})
 
 // 高亮代码块并添加复制功能
 const setupCodeBlockInteractions = () => {
@@ -635,7 +657,7 @@ onUnmounted(() => {
   
   // User message styling
   &.role-user {
-    justify-content: flex-end;
+    justify-content: end;
     .message-content {
       align-items: flex-end;
     }
@@ -644,6 +666,7 @@ onUnmounted(() => {
       color: white;
       border-radius: 16px 16px 4px 16px; 
       box-shadow: 0 4px 12px rgba(231, 76, 60, 0.25);
+      max-width: 100%;
       
       [data-theme="dark"] & {
         background: linear-gradient(135deg, #c0392b, #d35400, #1e8449);
@@ -664,7 +687,7 @@ onUnmounted(() => {
   
   // AI消息靠左
   &.role-assistant {
-    justify-content: flex-start;
+    justify-content: start;
     .message-bubble {
       background-color: white;
       color: #333;
@@ -836,7 +859,7 @@ onUnmounted(() => {
       margin-right: 8px;
       
       .el-icon {
-        color: #4285f4;
+        color: black;
         animation: pulseThinking 1.5s infinite alternate;
         
         [data-theme="dark"] & {
@@ -850,17 +873,17 @@ onUnmounted(() => {
       display: flex;
       align-items: center;
       font-weight: 600;
-      color: #4285f4;
+      color: black;
       
       [data-theme="dark"] & {
-        color: #5c9dff;
+        color: #c3c9d1;
     }
     }
     
     .toggle-thinking-btn {
       padding: 0 4px;
       font-size: 0.9rem;
-      color: #4285f4;
+      color: black;
       transition: all 0.2s ease;
       border-radius: 4px;
       
@@ -1081,7 +1104,7 @@ onUnmounted(() => {
 .message-loading {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: start;
   padding: 0.8rem 0;
   min-height: 40px; /* 确保最小高度 */
   
@@ -1181,7 +1204,7 @@ onUnmounted(() => {
   .editing-actions {
     margin-top: 8px;
     display: flex;
-    justify-content: flex-end;
+    justify-content: end;
     gap: 8px;
   }
 }
@@ -1219,7 +1242,8 @@ onUnmounted(() => {
   box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
   border-radius: 6px;
   border: 1px solid #dddddd;
-  overflow: hidden;
+  overflow: auto;
+  scrollbar-width: thin;
   width: auto;
   max-width: 100%;
 }
@@ -1802,14 +1826,14 @@ onUnmounted(() => {
 
 /* 添加优化的引用块样式和新增的Markdown增强样式 */
 :deep(blockquote) {
-  padding: 12px 16px 12px 20px;
-  margin: 1rem 0;
-  border-left: 3px solid #4285f4;
-  background-color: rgba(66, 133, 244, 0.05);
+  margin: 1.5rem 0;
+  padding: 1rem 1.2rem;
+  border-left: 4px solid #ccc;
+  background-color: #f8f8f8;
   border-radius: 0 8px 8px 0;
   color: #555;
-  font-size: 0.95em;
   position: relative;
+  font-size: 0.95em;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
   transition: all 0.3s ease;
   
@@ -1819,9 +1843,9 @@ onUnmounted(() => {
   }
   
   [data-theme="dark"] & {
-    background-color: rgba(92, 157, 255, 0.08);
-    border-left-color: #5c9dff;
-    color: #bbb;
+    background-color: #2d2d33;
+    border-left-color: #666;
+    color: #ddd;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     
     &:hover {
@@ -1829,94 +1853,67 @@ onUnmounted(() => {
     }
   }
   
-  /* 特殊引用块样式 */
+  /* 通用样式 */
+  p {
+    margin: 0 0 0.5rem 0;
+    
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+  
+  /* 信息引用样式 */
   &.info {
-    border-left-color: #34a853;
-    background-color: rgba(52, 168, 83, 0.05);
+    border-left-color: #42a5f5;
+    background-color: rgba(66, 165, 245, 0.1);
     
     &::before {
       content: "ℹ️";
-      position: absolute;
-      left: -12px;
-      top: 8px;
-      background: #34a853;
-      color: white;
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: bold;
-      font-size: 14px;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      display: inline-block;
+      margin-right: 8px;
+      font-size: 1.1em;
     }
     
     [data-theme="dark"] & {
-      background-color: rgba(76, 175, 80, 0.08);
-      border-left-color: #4caf50;
+      background-color: rgba(66, 165, 245, 0.15);
+      border-left-color: #5c9dff;
     }
   }
   
+  /* 警告引用样式 */
   &.warning {
-    border-left-color: #fbbc05;
-    background-color: rgba(251, 188, 5, 0.05);
+    border-left-color: #f39c12;
+    background-color: rgba(243, 156, 18, 0.1);
     
     &::before {
       content: "⚠️";
-      position: absolute;
-      left: -12px;
-      top: 8px;
-      background: #fbbc05;
-      color: white;
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: bold;
-      font-size: 14px;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      display: inline-block;
+      margin-right: 8px;
+      font-size: 1.1em;
     }
     
     [data-theme="dark"] & {
-      background-color: rgba(255, 193, 7, 0.08);
-      border-left-color: #ffc107;
+      background-color: rgba(243, 156, 18, 0.15);
+      border-left-color: #f5b041;
     }
   }
   
+  /* 错误引用样式 */
   &.error {
-    border-left-color: #ea4335;
-    background-color: rgba(234, 67, 53, 0.05);
+    border-left-color: #e74c3c;
+    background-color: rgba(231, 76, 60, 0.1);
     
     &::before {
       content: "❌";
-      position: absolute;
-      left: -12px;
-      top: 8px;
-      background: #ea4335;
-      color: white;
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: bold;
-      font-size: 14px;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      display: inline-block;
+      margin-right: 8px;
+      font-size: 1.1em;
     }
     
     [data-theme="dark"] & {
-      background-color: rgba(244, 67, 54, 0.08);
-      border-left-color: #f44336;
+      background-color: rgba(231, 76, 60, 0.15);
+      border-left-color: #ff6b6b;
     }
-  }
-  
-  /* 引用中的内容样式 */
-  p:last-child {
-    margin-bottom: 0;
   }
 }
 
@@ -2189,5 +2186,384 @@ onUnmounted(() => {
   
   // ... existing code ...
 }
+
+/* 消息统计信息 */
+.message-stats {
+  display: flex;
+  justify-content: flex-start;
+  gap: 8px;
+  padding-top: 4px;
+  font-size: 10px;
+  color: #999;
+  opacity: 0.8;
+  text-align: left;
+  font-family: 'Roboto Mono', monospace, system-ui;
+  letter-spacing: -0.3px;
+  
+  .stat-item {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    padding: 0 2px;
+  }
+}
+
+/* 扩展Markdown样式 - 流程图/思维导图/甘特图 */
+:deep(.flowchart-wrapper),
+:deep(.mindmap-wrapper),
+:deep(.gantt-wrapper) {
+  margin: 1.5rem 0;
+  padding: 10px;
+  border-radius: 10px;
+  background-color: white;
+  border: 1px solid #e0e0e0;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  
+  [data-theme="dark"] & {
+    background-color: #2a2a2a;
+    border-color: #444;
+  }
+  
+  &:hover {
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    
+    [data-theme="dark"] & {
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    }
+  }
+  
+  .mermaid {
+    display: flex;
+    justify-content: center;
+    min-height: 100px;
+    width: 100%;
+    
+    svg {
+      max-width: 100%;
+    }
+  }
+  
+  .flowchart-hint,
+  .mindmap-hint,
+  .gantt-hint {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(255, 255, 255, 0.9);
+    z-index: 5;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+    
+    [data-theme="dark"] & {
+      background-color: rgba(42, 42, 42, 0.9);
+    }
+    
+    &.hidden {
+      opacity: 0;
+      visibility: hidden;
+    }
+    
+    .flowchart-hint-icon,
+    .mindmap-hint-icon,
+    .gantt-hint-icon {
+      font-size: 24px;
+      margin-bottom: 10px;
+    }
+    
+    .flowchart-hint-text,
+    .mindmap-hint-text,
+    .gantt-hint-text {
+      font-size: 14px;
+      color: #666;
+      
+      [data-theme="dark"] & {
+        color: #aaa;
+      }
+    }
+  }
+}
+
+/* 高亮样式 */
+:deep(mark) {
+  background-color: rgba(255, 255, 0, 0.3);
+  padding: 2px 4px;
+  border-radius: 3px;
+  
+  [data-theme="dark"] & {
+    background-color: rgba(255, 255, 0, 0.2);
+    color: #f0f0f0;
+  }
+}
+
+/* 脚注样式 */
+:deep(.footnote-ref) {
+  font-size: 80%;
+  vertical-align: super;
+  line-height: 0;
+  
+  a {
+    color: #4284f5;
+    text-decoration: none;
+    padding: 0 2px;
+    
+    &:hover {
+      text-decoration: underline;
+    }
+    
+    [data-theme="dark"] & {
+      color: #5c9dff;
+    }
+  }
+}
+
+:deep(.footnotes) {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid #eaeaea;
+  font-size: 0.9rem;
+  
+  [data-theme="dark"] & {
+    border-top-color: #444;
+  }
+  
+  ol {
+    padding-left: 1.5rem;
+  }
+  
+  li {
+    margin-bottom: 0.5rem;
+    line-height: 1.5;
+    
+    p {
+      display: inline;
+    }
+    
+    .footnote-backref {
+      margin-left: 5px;
+      color: #888;
+      
+      &:hover {
+        color: #4284f5;
+      }
+      
+      [data-theme="dark"] & {
+        color: #aaa;
+        
+        &:hover {
+          color: #5c9dff;
+        }
+      }
+    }
+  }
+}
+
+/* 键盘快捷键样式增强 */
+:deep(kbd) {
+  background-color: #f7f7f7;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
+  color: #333;
+  display: inline-block;
+  font-family: monospace;
+  font-size: 0.85em;
+  line-height: 1;
+  padding: 2px 4px;
+  margin: 0 2px;
+  
+  [data-theme="dark"] & {
+    background-color: #333;
+    border-color: #555;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.5);
+    color: #eee;
+  }
+}
+
+/* 文件树样式增强 */
+:deep(.file-tree) {
+  margin: 1rem 0;
+  padding: 1rem;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  border-left: 3px solid #4284f5;
+  font-family: monospace;
+  
+  [data-theme="dark"] & {
+    background-color: #2a2a2a;
+    border-left-color: #5c9dff;
+  }
+  
+  .tree-item {
+    margin: 4px 0;
+    transition: all 0.2s ease;
+    
+    &:hover {
+      background-color: rgba(0, 0, 0, 0.05);
+      
+      [data-theme="dark"] & {
+        background-color: rgba(255, 255, 255, 0.05);
+      }
+    }
+    
+    .tree-label {
+      cursor: default;
+      display: flex;
+      align-items: center;
+      
+      &::before {
+        content: '';
+        display: inline-block;
+        width: 2px;
+        height: 100%;
+        margin-right: 8px;
+        background-color: #ddd;
+        
+        [data-theme="dark"] & {
+          background-color: #555;
+        }
+      }
+    }
+    
+    &.folder .tree-label {
+      font-weight: 600;
+      color: #e74c3c;
+      
+      [data-theme="dark"] & {
+        color: #ff6b6b;
+      }
+    }
+    
+    &.file .tree-label {
+      color: #333;
+      
+      [data-theme="dark"] & {
+        color: #ddd;
+      }
+    }
+  }
+}
+
+/* 详情块样式增强 */
+:deep(.details-wrapper) {
+  margin: 1.5rem 0;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background-color: #f9f9f9;
+  overflow: hidden;
+  
+  [data-theme="dark"] & {
+    background-color: #2d2d33;
+    border-color: #444;
+  }
+  
+  .details-summary {
+    padding: 10px 15px;
+    cursor: pointer;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    background-color: #f5f5f5;
+    border-bottom: 1px solid transparent;
+    transition: all 0.2s ease;
+    position: relative;
+    
+    [data-theme="dark"] & {
+      background-color: #333;
+    }
+    
+    &:hover {
+      background-color: #eaeaea;
+      
+      [data-theme="dark"] & {
+        background-color: #3a3a3a;
+      }
+    }
+    
+    &::after {
+      content: '▼';
+      font-size: 10px;
+      margin-left: auto;
+      transition: transform 0.2s ease;
+    }
+    
+    &.open {
+      border-bottom-color: #e0e0e0;
+      
+      [data-theme="dark"] & {
+        border-bottom-color: #444;
+      }
+      
+      &::after {
+        transform: rotate(180deg);
+      }
+    }
+  }
+  
+  .details-content {
+    padding: 0;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease, padding 0.3s ease;
+    
+    &.open {
+      padding: 15px;
+      max-height: 500px;
+      overflow-y: auto;
+    }
+  }
+}
+
+// ... existing code ...
+
+/* 增强图片样式 - 点击放大效果 */
+:deep(.enhanced-image-container) {
+  margin: 1rem 0;
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  
+  img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+    transition: all 0.3s ease;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    
+    [data-theme="dark"] & {
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+    
+    &:hover {
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+      
+      [data-theme="dark"] & {
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+      }
+    }
+  }
+  
+  .enhanced-image-caption {
+    font-size: 0.85rem;
+    color: #666;
+    text-align: center;
+    margin-top: 0.5rem;
+    font-style: italic;
+    
+    [data-theme="dark"] & {
+      color: #aaa;
+    }
+  }
+}
+
+/* 移除旧的全屏模态框样式，改由JavaScript动态添加内联样式 */
+
+// ... existing code ...
 </style>
 

@@ -1,0 +1,133 @@
+:root {
+  /* 默认亮色主题变量 */
+  --background-color: #f5f7fa;
+  --background-image: none;
+  --text-color: #303133;
+  --text-color-light: #606266;
+  --border-color: #dcdfe6;
+  --hover-color: #ecf5ff;
+  --active-color: #409eff;
+  --active-text-color: #ffffff;
+  --panel-background: #ffffff;
+  --card-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+
+  /* 聊天消息样式变量 */
+  --user-message-gradient: linear-gradient(244deg, #e74c3c, #f39c12, #2c7a65);
+  --ai-message-background: var(--panel-background);
+  --chat-font-size: 16px;
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* 暗色主题变量 */
+[data-theme="dark"] {
+  --background-color: #1e1e2d;
+  --background-image: none;
+  --text-color: #e8e8e8;
+  --text-color-light: #a0a0a0;
+  --border-color: #434343;
+  --hover-color: #213d5b;
+  --active-color: #177ddc;
+  --active-text-color: #ffffff;
+  --panel-background: #2d2d33;
+  --card-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.3);
+  
+  /* 暗色主题聊天消息样式不变 */
+}
+
+/* 应用全局样式变量 */
+body {
+  background-color: var(--background-color) !important;
+  background-image: var(--background-image) !important;
+  color: var(--text-color) !important;
+  font-family: var(--font-family) !important;
+}
+
+/* 确保聊天消息部分应用正确的字体大小 */
+.chat-container .message-content {
+  font-size: var(--chat-font-size) !important;
+}
+
+/* 用户消息背景渐变应用 */
+.user-message {
+  background: var(--user-message-gradient) !important;
+}
+
+/* 确保AI消息使用正确的背景 */
+.ai-message {
+  background-color: var(--ai-message-background) !important;
+}
+
+/* Apply variables to html and body elements with high priority */
+html, body {
+  background-color: var(--background-color) !important;
+  color: var(--text-color);
+  font-family: var(--font-family);
+}
+
+/* Apply background styles directly to the body with !important for highest priority */
+body {
+  background-image: var(--background-image) !important;
+  background-size: cover !important;
+  background-position: center !important;
+  background-attachment: fixed !important;
+  backdrop-filter: var(--body-backdrop-filter) !important;
+  transition: background-color 0.3s ease, background-image 0.3s ease;
+  min-height: 100vh !important; /* 确保body至少占满整个视口高度 */
+}
+
+/* Override any potential app container styles */
+#app {
+  background: transparent !important;
+}
+
+/* Override for user message gradient in ChatMessage.vue */
+.message-container.role-user .message-bubble {
+  background: var(--user-message-gradient) !important;
+}
+
+/* Font size application */
+.message-text {
+  font-size: var(--chat-font-size) !important;
+}
+
+/* Apply font-family to all text elements */
+.message-text, .message-bubble, input, textarea, button, .el-button {
+  font-family: var(--font-family) !important;
+}
+
+/* Handle background opacity */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, var(--background-opacity, 1));
+  z-index: -1;
+  pointer-events: none;
+}
+
+[data-theme="dark"] body::before {
+  background-color: rgba(30, 30, 30, var(--background-opacity, 1));
+}
+
+/* 全局重置和初始化 */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* 确保body占满整个窗口 */
+body {
+  margin: 0 !important;
+  padding: 0 !important;
+  min-height: 100vh !important;
+  width: 100% !important;
+  overflow-x: hidden;
+} 

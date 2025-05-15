@@ -559,6 +559,8 @@ import { messageHandler } from '../utils/messageHandler'
 import { getModelsList, checkBackendAvailability } from '../utils/apiService'
 import { storeToRefs } from 'pinia'
 import { ArrowDown, Menu, Check, ArrowLeft, Setting, Plus, Edit, Star, Search, MoreFilled, ChatRound, User, Delete, Expand, Fold, Moon, Sunny, ArrowUp, InfoFilled, Download, Position, More, VideoPause, Close, Link } from '@element-plus/icons-vue'
+import ThemeButton from '../components/ThemeButton.vue';
+import ThemeSettings from '../components/ThemeSettings.vue';
 
 // 状态管理
 const chatStore = useChatStore()
@@ -2764,6 +2766,20 @@ onUnmounted(() => {
   chatStore.isLoading = false;
 });
 
+// Add to the reactive state declarations
+const isThemeSettingsPanelVisible = ref(false);
+
+// Add method to toggle theme settings panel
+const toggleThemeSettingsPanel = () => {
+  isThemeSettingsPanelVisible.value = !isThemeSettingsPanelVisible.value;
+};
+
+// Add to the template in the icon-sidebar section, before the dark-mode-toggle
+<ThemeButton @toggle-theme-settings="toggleThemeSettingsPanel" />
+
+// Add at the end of the template before the closing </template> tag
+<ThemeSettings :visible="isThemeSettingsPanelVisible" @close="isThemeSettingsPanelVisible = false" />
+
 </script>
 
 <style lang="scss" scoped>
@@ -3326,8 +3342,6 @@ onUnmounted(() => {
     // 移动端样式
     @media (max-width: 768px) {
         padding: 10px 12px;
-        border: none;
-        box-shadow: none;
     }
 
     // 移动端左侧按钮组

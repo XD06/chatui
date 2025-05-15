@@ -1,4 +1,7 @@
 import { promptTemplates } from '../config/promptTemplates'
+import { optimizePrompt as apiOptimizePrompt, checkBackendAvailability } from './apiService'
+// 导入Markdown处理函数
+import { initializeMarkdown, applyMarkdownExtensions } from './markdownExtensions.js'
 
 export const messageHandler = {
     formatMessage(role, content) {
@@ -17,114 +20,161 @@ export const messageHandler = {
     },
 
     /**
-     * 计算文本的token数量
-     * @param {string} text - 要计算的文本
-     * @returns {number} token数量
+     * 从消息数组构建请求格式
+     * @param {Array} messages - 消息数组
+     * @param {Object} systemMessage - 可选的系统消息
+     * @returns {Array} - 格式化后的消息数组
+     */
+    buildRequestMessages(messages, systemMessage = null) {
+        const requestMessages = [];
+        
+        // 添加可选的系统消息
+        if (systemMessage) {
+            requestMessages.push({
+                role: 'system',
+                content: systemMessage
+            });
+        }
+        
+        // 添加用户和助手消息
+        for (const message of messages) {
+            requestMessages.push({
+                role: message.role,
+                content: message.content
+            });
+        }
+        
+        return requestMessages;
+    },
+
+    /**
+     * 检测是否为流式数据
+     * @param {string} chunk - 数据块
+     * @returns {boolean} - 是否为流式数据
+     */
+    isStreamData(chunk) {
+        return chunk.startsWith('data:') && (chunk.includes('"delta"') || chunk.includes('"choices"'));
+    },
+
+    /**
+     * 解析流式数据块
+     * @param {string} chunk - 数据块
+     * @returns {Object} - 解析后的数据对象
+     */
+    parseStreamChunk(chunk) {
+        // 处理多行数据
+        const lines = chunk.split('\n');
+        let content = '';
+        let done = false;
+        
+        for (const line of lines) {
+            if (line.startsWith('data:')) {
+                const dataContent = line.substring(5).trim();
+                
+                // 检查是否为结束标记
+                if (dataContent === '[DONE]') {
+                    done = true;
+                    continue;
+                }
+                
+                try {
+                    // 解析JSON数据
+                    const data = JSON.parse(dataContent);
+                    
+                    // 提取内容增量
+                    if (data.choices && data.choices.length > 0) {
+                        const choice = data.choices[0];
+                        
+                        // 处理流式响应的差异格式
+                        if (choice.delta && choice.delta.content) {
+                            content += choice.delta.content;
+                        } else if (choice.text) {
+                            content += choice.text;
+                        }
+                    }
+                } catch (error) {
+                    console.error('解析流式数据错误:', error, '原始数据:', dataContent);
+                }
+            }
+        }
+        
+        return { content, done };
+    },
+
+    /**
+     * 计算消息的token数
+     * @param {string} text - 文本内容
+     * @returns {number} - 估算的token数
      */
     countTokens(text) {
-        // 处理null或undefined
+        // 更准确的token计算方法
         if (!text) return 0;
         
-        // 确保text是字符串
-        text = String(text);
+        // 基础规则：中文每个字符约等于1个token，英文和数字每4个字符约等于1个token
+        let tokenCount = 0;
+        let codeBlockExtra = 0;
         
-        // 简单的估算模式
-        const patterns = {
-            cjk: /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]/g,
-            emoji: /[\p{Extended_Pictographic}]/gu,
-            punctuation: /[^\w\s\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]/g,
-            whitespace: /\s+/g,
-            number: /\d+(\.\d+)?/g,
-            latinWord: /[a-zA-Z]+([-'][a-zA-Z]+)*/g
-        };
+        // 检查是否有代码块，代码块通常需要更多token
+        const codeBlocks = text.match(/```[\s\S]*?```/g) || [];
+        let remainingText = text;
         
-        // 预处理文本
-        const normalizedText = text.replace(/\s+/g, ' ').trim();
-        
-        // 文本分段处理
-        const segments = [];
-        let currentPos = 0;
-        
-        // 处理代码块
-        const codeBlockRegex = /```[\s\S]*?```/g;
-        let match;
-        
-        while ((match = codeBlockRegex.exec(normalizedText)) !== null) {
-            if (match.index > currentPos) {
-                segments.push({
-                    type: 'text',
-                    content: normalizedText.substring(currentPos, match.index)
-                });
+        // 先处理代码块
+        if (codeBlocks.length > 0) {
+            for (const block of codeBlocks) {
+                // 从文本中移除代码块
+                remainingText = remainingText.replace(block, '');
+                
+                // 代码通常每2.5个字符约1个token
+                codeBlockExtra += Math.ceil(block.length / 2.5);
             }
-            
-            segments.push({
-                type: 'code_block',
-                content: match[0]
-            });
-            
-            currentPos = match.index + match[0].length;
         }
         
-        if (currentPos < normalizedText.length) {
-            segments.push({
-                type: 'text',
-                content: normalizedText.substring(currentPos)
-            });
+        // 分离中文字符和非中文字符
+        const chineseChars = remainingText.match(/[\u4e00-\u9fa5]/g) || [];
+        const nonChineseText = remainingText.replace(/[\u4e00-\u9fa5]/g, '');
+        
+        // 中文字符：每个字符约1个token
+        tokenCount += chineseChars.length;
+        
+        // 非中文字符：每4个字符约1个token
+        tokenCount += Math.ceil(nonChineseText.length / 4);
+        
+        // 特殊字符和表情符号可能消耗更多token
+        const specialChars = remainingText.match(/[^\w\s\u4e00-\u9fa5]/g) || [];
+        tokenCount += specialChars.length * 0.25; // 平均每4个特殊字符额外增加1个token
+        
+        // 添加代码块的额外token
+        tokenCount += codeBlockExtra;
+        
+        // 添加基础token（每条消息的角色标识等）
+        tokenCount += 4;
+        
+        return Math.ceil(tokenCount);
+    },
+
+    /**
+     * 优化用户的提示词
+     * @param {string} promptText - 需要优化的提示词文本
+     * @param {string} apiKey - API密钥 (可选,如果使用后端则不需要)
+     * @param {string} apiEndpoint - API端点URL (可选,如果使用后端则不需要)
+     * @param {Object} apiOptions - API选项（模型、温度等）
+     * @param {boolean} userCustomizedAPI - 是否使用用户自定义的API设置
+     * @returns {Promise<Object>} - 优化结果
+     */
+    async optimizePrompt(promptText, apiKey, apiEndpoint, apiOptions, userCustomizedAPI = false) {
+        try {
+            // 记录调用参数
+            console.log('messageHandler.optimizePrompt 被调用:');
+            console.log('- 自定义API:', userCustomizedAPI);
+            console.log('- API密钥:', apiKey ? '已设置' : '未设置');
+            console.log('- API端点:', apiEndpoint);
+            
+            // 调用apiService的优化函数，传递userCustomizedAPI参数
+            return await apiOptimizePrompt(promptText, apiKey, apiEndpoint, apiOptions, userCustomizedAPI);
+        } catch (error) {
+            console.error('优化提示词错误:', error);
+            throw error;
         }
-        
-        // 计算token
-        let totalTokens = 0;
-        
-        segments.forEach(segment => {
-            if (segment.type === 'code_block') {
-                const code = segment.content.replace(/```[\w]*\n?|\n?```$/g, '');
-                const codeTokens = code.split(/(\s+|[{}()\[\].,;:=<>!&|^+\-*/%~#]+)/)
-                    .filter(Boolean)
-                    .length;
-                totalTokens += codeTokens + 3; // 3 tokens for code block markers
-            } else {
-                const text = segment.content;
-                
-                // 计算中文和其他CJK字符
-                const cjkChars = (text.match(patterns.cjk) || []).length;
-                
-                // 计算拉丁文单词
-                let wordTokens = 0;
-                const words = text.match(patterns.latinWord) || [];
-                words.forEach(word => {
-                    if (word.length <= 2) {
-                        wordTokens += 1;
-                    } else if (word.length <= 6) {
-                        wordTokens += Math.ceil(word.length / 2.5);
-                    } else {
-                        wordTokens += Math.ceil(word.length / 2);
-                    }
-                });
-                
-                // 计算数字token
-                const numbers = text.match(patterns.number) || [];
-                const numberTokens = numbers.reduce((sum, num) => {
-                    if (num.length <= 2) return sum + 1;
-                    return sum + Math.ceil(num.length / 2);
-                }, 0);
-                
-                // 计算其他token
-                const punctuationCount = (text.match(patterns.punctuation) || []).length;
-                const whitespaceCount = (text.match(patterns.whitespace) || []).length;
-                const emojiCount = (text.match(patterns.emoji) || []).length * 2;
-                
-                // 计算URL token
-                const urlMatches = text.match(/https?:\/\/\S+/g) || [];
-                const urlTokens = urlMatches.reduce((sum, url) => sum + Math.ceil(url.length / 4), 0);
-                
-                totalTokens += cjkChars + wordTokens + numberTokens + punctuationCount + 
-                             whitespaceCount + emojiCount + urlTokens;
-            }
-        });
-        
-        // 添加系统指令开销
-        const modelOverhead = 3;
-        return Math.round(totalTokens + modelOverhead);
     },
 
     // 节流函数
@@ -146,6 +196,24 @@ export const messageHandler = {
                     }
                 }, limit - (Date.now() - lastRan));
             }
+        }
+    },
+
+    /**
+     * 使用完整的Markdown扩展处理内容
+     * @param {string} content - 原始内容
+     * @returns {string} - 处理后的内容
+     */
+    processContentWithFullMarkdown(content) {
+        if (!content) return content;
+        
+        try {
+            // 应用所有Markdown扩展
+            return applyMarkdownExtensions(content);
+        } catch (error) {
+            console.error('Markdown处理失败:', error);
+            // 出错时返回原始内容
+            return content;
         }
     },
 
@@ -288,18 +356,21 @@ export const messageHandler = {
                 
                 let batchContent = '';
                 for (let i = 0; i < batchSize; i++) {
-                    const char = charBuffer.shift();
+                const char = charBuffer.shift();
                     batchContent += char;
-                    // 检查特殊内容
-                    checkForSpecialContent(char);
+                // 检查特殊内容
+                checkForSpecialContent(char);
                 }
                 
                 full_content += batchContent;
                 totalCharsOutput += batchContent.length;
                 
+                // 应用Markdown处理到完整内容
+                const processedContent = this.processContentWithFullMarkdown(full_content);
+                
                 // 将当前内容更新到UI
                 updateMessage({
-                    content: full_content,
+                    content: processedContent || full_content,
                     thinkingContent: full_reasonResponse
                 });
                 
@@ -323,7 +394,7 @@ export const messageHandler = {
                         full_content = tempContent;
                         totalCharsOutput += batch.length;
                         
-                        updateMessage({
+            updateMessage({
                             content: full_content,
                             thinkingContent: full_reasonResponse
                         });
@@ -374,8 +445,11 @@ export const messageHandler = {
             
             console.log(`强制最终更新: 内容长度=${content.length}, 缓冲区=${charBuffer.length}`);
             
+            // 应用Markdown处理
+            const processedContent = this.processContentWithFullMarkdown(content);
+            
             updateMessage({
-                content: content,
+                content: processedContent || content,
                 thinkingContent: thinkingContent
             });
         };
@@ -476,6 +550,13 @@ export const messageHandler = {
                     try {
                         const { done, value } = await reader.read();
                         
+                        // 检查流是否应该停止（例如，由于AbortController被触发）
+                        if (!isStreaming) {
+                            console.log('流处理被中断');
+                            isStopped = true;
+                            break;
+                        }
+                        
                         if (done) {
                             console.log('读取器报告流已结束');
                             if (buffer.length > 0) {
@@ -523,9 +604,21 @@ export const messageHandler = {
                         }
 
                         for (const chunk of chunks) {
+                            // 再次检查是否应该停止处理
+                            if (!isStreaming) {
+                                console.log('流处理在处理块时被中断');
+                                isStopped = true;
+                                break;
+                            }
+                            
                             if (chunk.trim()) {
                                 await processChunk(chunk);
                             }
+                        }
+
+                        // 如果处理被中断，则退出循环
+                        if (isStopped) {
+                            break;
                         }
 
                         // 检查超时
@@ -540,6 +633,14 @@ export const messageHandler = {
                             }
                         }
                     } catch (error) {
+                        // 检查是否是AbortError
+                        if (error.name === 'AbortError') {
+                            console.log('流处理被用户中断');
+                            isStreaming = false;
+                            isStopped = true;
+                            break;
+                        }
+                        
                         if (retryCount < MAX_RETRIES) {
                             retryCount++;
                             console.warn(`重试第 ${retryCount} 次...`);
@@ -547,17 +648,31 @@ export const messageHandler = {
                             continue;
                         }
                         throw error;
+                    }
                 }
-            }
-        } catch (error) {
-            console.error('流处理错误:', error);
-                if (onError) onError(error);
-            throw error;
+            } catch (error) {
+                // 检查是否是AbortError
+                if (error.name === 'AbortError') {
+                    console.log('流处理被用户中断 (在主catch块中)');
+                    isStreaming = false;
+                    isStopped = true;
+                } else {
+                    console.error('流处理错误:', error);
+                    if (onError) onError(error);
+                    throw error;
+                }
             } finally {
                 // 清理所有定时器
                 if (outputTimerId) {
                     clearInterval(outputTimerId);
                     outputTimerId = null;
+                }
+                
+                // 如果处理被中断，告诉调用者
+                if (isStopped) {
+                    console.log('流处理被用户中断，不会处理缓冲区中的剩余字符');
+                    if (onComplete) onComplete();
+                    return;
                 }
                 
                 // 确保缓冲区中的任何剩余字符都被添加到输出中
@@ -744,79 +859,16 @@ export const messageHandler = {
     },
 
     /**
-     * 优化用户的提示词
-     * @param {string} promptText - 需要优化的提示词文本
-     * @param {string} apiKey - API密钥
-     * @param {string} apiEndpoint - API端点URL
-     * @param {Object} apiOptions - API选项（模型、温度等）
-     * @returns {Promise<Object>} - 返回包含优化后内容的对象
-     */    
-    optimizePrompt: async function(promptText, apiKey, apiEndpoint, apiOptions) {
-        try {
-            if (!promptText || !apiKey) {
-                throw new Error('缺少必要参数');
-            }
-
-            // 使用较低的温度以获得更可靠的结果
-            const options = {
-                ...apiOptions,
-                temperature: 0.5,
-                stream: false  // 不使用流式响应
-            };
-
-            // 准备请求体 - 提示词本身已经包含了指令，不需要额外的系统消息
-            const requestBody = {
-                model: options.model,
-                messages: [
-                    {
-                        role: 'system',
-                        content: promptTemplates.optimizer
-                    },
-                    {
-                        role: 'user',
-                        content: promptText
-                    }
-                ],
-                temperature: options.temperature,
-                max_tokens: options.max_tokens || 2000,
-                top_p: options.top_p || 1,
-                frequency_penalty: 0,
-                presence_penalty: 0
-            };
-
-            // 发送请求
-            const response = await fetch(apiEndpoint, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`
-                },
-                body: JSON.stringify(requestBody)
-            });
-            console.log('提示词优化请求体:', requestBody);
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(`API错误: ${errorData.error?.message || response.statusText || '未知错误'}`);
-            }
-
-            const data = await response.json();
-            
-            if (!data.choices || data.choices.length === 0) {
-                throw new Error('API返回无效响应');
-            }
-
-            return {
-                content: data.choices[0].message.content,
-                success: true
-            };
-        } catch (error) {
-            console.error('提示词优化失败:', error);
-            throw error;
-        }
-    },
-
-    // 添加一个新方法，使用后端 API 发送消息
-    async sendMessageViaBackend(messages, apiOptions, onUpdate, isRegeneration = false) {
+     * 使用后端API发送消息
+     * 
+     * @param {Array} messages 消息列表
+     * @param {Object} apiOptions API选项
+     * @param {Function} onUpdate 更新回调
+     * @param {Boolean} isRegeneration 是否为重新生成
+     * @param {Object} authOptions 可选的认证选项，包含API Key和端点URL
+     * @returns {Promise<Object>} 结果对象
+     */
+    async sendMessageViaBackend(messages, apiOptions, onUpdate, isRegeneration = false, authOptions = {}) {
         const controller = new AbortController();
         const signal = controller.signal;
         
@@ -827,7 +879,23 @@ export const messageHandler = {
             stream = true
         } = apiOptions;
         
-        // 构建基本payload
+        // 提取认证信息
+        const { apiKey, apiEndpoint } = authOptions;
+        
+        // 添加日志，检查传入的API设置
+        console.log('===== API请求设置开始 =====');
+        console.log('传入的自定义API Key:', apiKey ? '已设置 (长度: ' + apiKey.length + ')' : '未设置');
+        console.log('传入的自定义API端点:', apiEndpoint || '未设置');
+        console.log('使用的模型:', model);
+        
+        // 关键修改：优先使用前端API设置的逻辑
+        // 如果有自定义API密钥和端点，优先使用，不管后端是否可用
+        const { userCustomizedAPI } = authOptions;
+        const useCustomApi = userCustomizedAPI && apiKey && apiEndpoint;
+        console.log('是否启用自定义API:', userCustomizedAPI);
+        console.log('是否有完整的自定义API设置:', useCustomApi);
+        
+        // 构建payload
         const payload = {
             model,
             messages: messages.map(msg => ({
@@ -835,84 +903,144 @@ export const messageHandler = {
                 content: msg.content || ''
             })),
             temperature,
-            max_tokens
+            max_tokens,
+            stream
         };
         
-        // 删除可能导致错误的null值
-        Object.keys(payload).forEach(key => {
-            if (payload[key] === null) {
-                delete payload[key];
-            }
-        });
-        
         try {
-            // 获取当前环境的 API 基础 URL
-            const apiBaseUrl = window.location.hostname.includes('netlify.app') 
-                ? '/.netlify/functions/chat'
-                : '/api/chat';
+            // 检查后端API是否可用
+            const backendAvailable = await checkBackendAvailability();
+            console.log('后端API是否可用:', backendAvailable);
             
-            console.log('准备发送后端 API 请求:', { 
-                endpoint: apiBaseUrl,
-                model: model,
-                messagesCount: messages.length
-            });
-
-            const headers = {
-                'Content-Type': 'application/json'
-            };
+            console.log('决定使用:', useCustomApi ? '前端自定义API' : (backendAvailable ? '后端API' : '直接API调用'));
+            console.log('===== API请求设置结束 =====');
             
-            console.log('请求体:', payload);
-
-            const response = await fetch(apiBaseUrl, {
-                method: 'POST',
-                headers: headers,
-                body: JSON.stringify(payload),
-                signal // 添加信号用于中断
-            });
-
-            console.log('收到API响应:', {
-                status: response.status,
-                statusText: response.statusText,
-                ok: response.ok
-            });
-
-            if (!response.ok) {
-                let errorText = '';
-                let errorJson = null;
+            // 修改后的条件：如果有自定义API或后端不可用，使用直接API调用
+            if (useCustomApi || !backendAvailable) {
+                console.log('使用直接API调用', useCustomApi ? '(优先使用自定义API)' : '(后端不可用)');
                 
-                try {
-                    // 尝试解析为JSON
-                    const errorContent = await response.text();
-                    console.error('API错误原始内容:', errorContent);
-                    
-                    try {
-                        errorJson = JSON.parse(errorContent);
-                        console.error('API错误JSON解析:', errorJson);
-                        errorText = errorContent;
-                    } catch (e) {
-                        console.error('错误内容不是有效的JSON:', e);
-                        errorText = errorContent;
-                    }
-                } catch (e) {
-                    console.error('无法读取错误响应内容:', e);
-                    errorText = `Status: ${response.status}, StatusText: ${response.statusText}`;
+                // 验证API密钥和端点是否可用
+                if (!apiKey) {
+                    throw new Error('API密钥未提供，无法继续操作');
                 }
                 
-                throw new Error(`API请求失败: ${response.status} ${response.statusText} - ${errorText}`);
+                if (!apiEndpoint) {
+                    throw new Error('API端点URL未提供，无法继续操作');
+                }
+                
+                // 使用直接API调用
+                console.log(`使用直接API调用 (${isRegeneration ? '重新生成' : '新消息'}):`, {
+                    model,
+                    temperature,
+                    max_tokens,
+                    stream,
+                    messages,
+                    endpoint: apiEndpoint
+                });
+                
+                const headers = {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                };
+                
+                console.log('准备直接发送API请求到:', apiEndpoint);
+                const response = await fetch(apiEndpoint, {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify(payload),
+                    signal
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`直接API请求失败: ${response.status} ${response.statusText}`);
+                }
+                
+                // 处理流式响应
+                if (stream) {
+                    await this.processStreamResponse(response, {
+                        updateMessage: (messageData) => {
+                            onUpdate(messageData, messageData.content !== '');
+                        },
+                        updateTokenCount: () => {},
+                        onError: (error) => {
+                            console.error('流处理错误:', error);
+                        },
+                        onComplete: () => {
+                            console.log('流处理完成');
+                        },
+                        isRegeneration
+                    });
+                    
+                    return { success: true, controller };
+                } else {
+                    const data = await response.json();
+                    const aiReply = data.choices && data.choices[0] && data.choices[0].message 
+                        ? data.choices[0].message.content 
+                        : '无法获取回复内容';
+                    onUpdate(aiReply, true);
+                    return { success: true, controller };
+                }
             }
-
-            // 处理 API 响应
-            const data = await response.json();
             
-            // 提取 AI 回复内容
-            const aiReply = data.choices && data.choices[0] && data.choices[0].message 
-                ? data.choices[0].message.content 
-                : '无法获取回复内容';
+            // 如果后端可用，且没有自定义API设置，使用后端API
+            console.log(`使用后端API (${isRegeneration ? '重新生成' : '新消息'}):`, { 
+                model,
+                temperature,
+                max_tokens,
+                stream,
+                messagesCount: messages.length
+            });
             
-            // 调用回调函数更新消息
-            onUpdate(aiReply, true);
+            // 如果是重新生成，使用regenerate端点
+            const endpoint = isRegeneration ? '/api/regenerate' : '/api/chat';
             
-            return { success: true, controller };
+            // 发送请求
+            console.log('准备发送请求到后端API:', endpoint);
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload),
+                signal
+            });
+            
+            if (!response.ok) {
+                throw new Error(`API请求失败: ${response.status} ${response.statusText}`);
+            }
+            
+            // 处理流式响应
+            if (stream) {
+                // 使用现有的processStreamResponse方法处理流式响应
+                await this.processStreamResponse(response, {
+                    updateMessage: (messageData) => {
+                        onUpdate(messageData, messageData.content !== '');
+                    },
+                    updateTokenCount: () => {}, // 如果需要可以传递
+                    onError: (error) => {
+                        console.error('流处理错误:', error);
+                    },
+                    onComplete: () => {
+                        console.log('流处理完成');
+                    },
+                    isRegeneration
+                });
+                
+                return { success: true, controller };
+            } else {
+                // 处理非流式响应
+                const data = await response.json();
+                
+                // 提取AI回复内容
+                const aiReply = data.choices && data.choices[0] && data.choices[0].message 
+                    ? data.choices[0].message.content 
+                    : '无法获取回复内容';
+                
+                // 调用回调函数更新消息
+                onUpdate(aiReply, true);
+                
+                return { success: true, controller };
+            }
         } catch (error) {
             // 如果是中断错误，不需要抛出异常
             if (error.name === 'AbortError') {

@@ -291,6 +291,7 @@ import { useChatStore } from '../stores/chat'
 import { useSettingsStore } from '../stores/settings'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { messageHandler } from '../utils/messageHandler'
+import { checkBackendAvailability } from '../utils/apiService'
 import { promptTemplates } from '../config/promptTemplates'
 
 // 定义组件的属性
@@ -373,7 +374,7 @@ const roleCategories = ref([
     name: '通用',
     roles: [
       { name: '通用助手', description: '一个通用的AI助手', prompt: promptTemplates.aiassistant, color: '#4285F4' },
-      { name: '写作助手', description: '协助各类文体写作和润色', prompt: promptTemplates.writer, color: '#DB4437' },
+      { name: '绘画助手', description: '使用请帮我画一幅XX的画的格式', prompt: promptTemplates.Picturer, color: '#DB4437' },
       { name: '编程助手', description: '提供高质量代码和技术解决方案', prompt: promptTemplates.programmer, color: '#F4B400' },
       { name: '自定义', description: '创建自定义系统提示词', prompt: '', color: '#34A853', isCustom: true }
     ]
@@ -797,16 +798,30 @@ const handleOptimizePrompt = async () => {
     // 使用提示词模板而不是硬编码的提示词
     const optimizePrompt = `优化下面的内容，使其成为更清晰、更具体，以便获得更好回答的提示词(不要添加解释,不要用markdown包裹)：\n\n${messageText.value}`;
     
-    // 调用API优化提示词
+    // 获取API密钥和端点 - 优先使用settingsStore中的值
+    const apiKey = settingsStore.apiKey;
+    const apiEndpoint = settingsStore.apiEndpoint;
+    
+    // 判断是否使用自定义API
+    const useCustomApi = settingsStore.userCustomizedAPI;
+    
+    console.log('优化提示词 - 设置:', {
+      userCustomizedAPI: useCustomApi,
+      apiKey: apiKey ? '已设置' : '未设置',
+      apiEndpoint: apiEndpoint
+    });
+    
+    // 调用API优化提示词 - 传递userCustomizedAPI参数
     const response = await messageHandler.optimizePrompt(
       optimizePrompt,
-      settingsStore.actualApiKey,
-      settingsStore.actualApiEndpoint,
+      apiKey,
+      apiEndpoint,
       {
         model: settingsStore.model,
         temperature: 0.7,
         max_tokens: 2000
-      }
+      },
+      useCustomApi // 传递自定义API标志
     );
     
     // 更新输入框内容为优化后的提示词
@@ -1126,6 +1141,7 @@ onUnmounted(() => {
       background-color: var(--button-icon-bg, #e9e9eb);
       border-color: var(--button-icon-bg, #e9e9eb);
       color: var(--button-icon-color, #606266);
+      margin: 0px;
   transition: all 0.3s ease;
       
       &:hover {

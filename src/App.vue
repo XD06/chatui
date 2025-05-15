@@ -15,13 +15,16 @@
     </div>
 
     <!-- Password Screen - Shown after loading but before authentication -->
-    <PasswordScreen v-if="isAppLoaded && resourcesLoaded && !settingsStore.isAuthenticated" />
+    <PasswordScreen v-if="isAppLoaded && resourcesLoaded && !settingsStore.isAuthenticated && authRequired" />
 
     <!-- Main App Content - Only shown when both app and resources are loaded and authenticated -->
-    <router-view v-if="isAppLoaded && resourcesLoaded && settingsStore.isAuthenticated" />
+    <router-view v-if="isAppLoaded && resourcesLoaded && (settingsStore.isAuthenticated || !authRequired)" />
     
     <!-- Migration Helper - Will show if old history format is detected -->
-    <MigrationHelper v-if="isAppLoaded && resourcesLoaded && settingsStore.isAuthenticated" />
+    <MigrationHelper v-if="isAppLoaded && resourcesLoaded && (settingsStore.isAuthenticated || !authRequired)" />
+    
+    <!-- Theme Settings Component -->
+    <ThemeSettings v-if="isAppLoaded && resourcesLoaded" />
     
     <!-- 滚动到底部按钮 - 更新为箭头图标 -->
     <!-- <div 
@@ -47,7 +50,9 @@ import { useSettingsStore } from './stores/settings'
 import AppLogo from './components/AppLogo.vue'
 import MigrationHelper from './components/MigrationHelper.vue'
 import PasswordScreen from './components/PasswordScreen.vue'
+import ThemeSettings from './components/ThemeSettings.vue'
 import './assets/mobileFixStyles.css' // Import mobile fixes CSS
+import { checkAuthRequired } from './utils/apiService'
 
 const settingsStore = useSettingsStore()
 const isAppLoaded = ref(false)
@@ -58,6 +63,21 @@ const isDarkMode = ref(false)
 let scrolling = false
 let scrollTimeout
 let resourceLoadTimeout
+const authRequired = ref(false)
+
+// 更新密码所需检查函数
+const checkPasswordRequired = async () => {
+  try {
+    loadingMessage.value = '检查服务器配置...'
+    const { authRequired: needsAuth } = await checkAuthRequired()
+    authRequired.value = needsAuth
+    console.log('服务器密码验证需求:', needsAuth ? '需要' : '不需要')
+  } catch (error) {
+    console.error('检查密码需求时出错:', error)
+    // 安全起见，默认需要密码
+    authRequired.value = true
+  }
+}
 
 // 监听应用加载状态，移除body上的loading类
 watch([isAppLoaded, resourcesLoaded], ([appLoaded, resLoaded]) => {
@@ -136,6 +156,9 @@ const initApp = async () => {
     
     // 等待最小加载时间
     await minimumLoadingTime
+    
+    // 检查是否需要密码验证
+    await checkPasswordRequired()
     
     // 标记应用核心已加载
     isAppLoaded.value = true
@@ -254,16 +277,16 @@ onMounted(() => {
 
 <style lang="scss">
 #app {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   height: 100vh;
   width: 100vw;
   overflow: hidden;
-  background-color: #ffffff;
+  background-color: transparent !important; /* 确保不覆盖body背景 */
   
   [data-theme="dark"] & {
-    background-color: #121212;
+    background-color: transparent !important; /* 确保不覆盖body背景 */
   }
 }
 

@@ -15,13 +15,13 @@ function parseEnvModels(modelsStr) {
 }
 
 // 从环境变量获取默认模型
-const defaultModel = import.meta.env.VITE_DEFAULT_MODEL || 'THUDM/GLM-4-9B-0414';
+const defaultModel = import.meta.env.VITE_DEFAULT_MODEL;
 
 // 从环境变量获取默认最大tokens
 const defaultMaxTokens = parseInt(import.meta.env.VITE_DEFAULT_MAX_TOKENS) || 1000;
 
 // 从环境变量获取网站访问密码
-const websiteCode = import.meta.env.WEBSITE_CODE || '';
+const websiteCode = import.meta.env.VITE_WEBSITE_CODE || '';
 
 // 以下变量不再从环境变量中读取，而是通过后端 API 安全处理
 // 不再需要: const ENV_API_KEY = import.meta.env.VITE_API_KEY || '';
@@ -257,7 +257,7 @@ export const useSettingsStore = defineStore('settings', {
         ],
     },
 })
-
+console.log( '当前模型列表:', );
 /**
  * @async
  * @function fetchModelList
