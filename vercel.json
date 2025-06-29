@@ -24,10 +24,5 @@
       "dest": "/assets/$1"
     },
     { "src": "/(.*)", "dest": "/index.html" }
-  ],
-  "env": {
-    "API_KEY": "@api_key",
-    "API_URL": "@api_url",
-    "WEBSITE_CODE": "@access_code"
-  }
+  ]
 } 
