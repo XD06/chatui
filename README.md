@@ -44,7 +44,7 @@ docker-compose -f docker-compose.prod.yml up -d
 
 ### 2. Vercel部署（基本功能）
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FXD06%2Fchatui)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/import/clone?repository-url=https%3A%2F%2Fgithub.com%2FXD06%2Fchatui)
 
 1. 点击上方按钮，直接从GitHub仓库导入项目到Vercel
 2. 在Vercel项目设置中添加以下环境变量:
@@ -73,6 +73,20 @@ npm install
 # 启动开发服务器
 npm run dev
 ```
+
+### 生产部署
+```bash
+# 构建生产版本
+npm run build
+
+# 启动生产服务器
+node --experimental-json-modules server/index.js
+```
+
+### Docker部署
+
+#### 使用Docker Compose (推荐)
+
 
 ## 配置选项
 
