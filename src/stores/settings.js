@@ -86,10 +86,11 @@ export const useSettingsStore = defineStore('settings', {
         actualApiEndpoint: (state) => {
             // 如果用户选择了自定义API，返回用户设置的值
             if (state.userCustomizedAPI) {
+                // 确保返回有效的API端点
                 return state.apiEndpoint || '';
             }
-            // 否则返回默认端点
-            return 'https://api.openai.com/v1/chat/completions';
+            // 否则返回空字符串，表示使用后端默认端点
+            return '';
         },
         
         // 获取显示在UI上的API Key值
@@ -189,8 +190,15 @@ export const useSettingsStore = defineStore('settings', {
         // 设置自定义 API 凭证
         setCustomAPI(apiKey, apiEndpoint) {
             this.apiKey = apiKey || '';
-            this.apiEndpoint = apiEndpoint || 'https://api.openai.com/v1/chat/completions';
+            this.apiEndpoint = apiEndpoint || '';
             this.userCustomizedAPI = true;
+            
+            // 添加日志，确认API设置已更新
+            console.log('已更新自定义API设置:', {
+                apiKeySet: !!this.apiKey,
+                apiEndpointSet: !!this.apiEndpoint,
+                userCustomizedAPI: this.userCustomizedAPI
+            });
         },
         
         // 清除自定义API设置，恢复使用环境变量
@@ -198,6 +206,9 @@ export const useSettingsStore = defineStore('settings', {
             this.apiKey = '';
             this.apiEndpoint = '';
             this.userCustomizedAPI = false;
+            
+            // 添加日志，确认API设置已清除
+            console.log('已清除自定义API设置');
         },
         
         // 添加新模型到选项列表

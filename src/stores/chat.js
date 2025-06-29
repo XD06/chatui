@@ -24,14 +24,12 @@ export const useChatStore = defineStore('chat', {
             }
         },
 
-        updateLastMessage(update) {
+        updateLastMessage(content, reasoningContent = null) {
             const lastMessage = this.messages[this.messages.length - 1]
             if (lastMessage) {
-                if (update.thinkingContent !== undefined) {
-                    lastMessage.thinkingContent = update.thinkingContent
-                }
-                if (update.content !== undefined) {
-                    lastMessage.content = update.content
+                lastMessage.content = content
+                if (reasoningContent !== null) {
+                    lastMessage.reasoningContent = reasoningContent
                 }
             }
         },

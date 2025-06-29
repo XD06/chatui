@@ -1,0 +1,651 @@
+/* Mobile Styles with Theme Adaptation */
+
+/* Mobile-only minimalist style
+ * Only applied when viewport width < 768px
+ */
+
+/* 确保所有移动端样式只在移动设备上生效 */
+@media screen and (max-width: 768px) {
+  /* 在移动端视图下，隐藏桌面操作按钮，显示移动操作按钮 */
+  .desktop-actions {
+    display: none !important;
+  }
+  
+  .mobile-actions {
+    display: flex !important;
+  }
+  /* ===== Overall Chat Container and App Styling ===== */
+  body, html, #app, .el-container {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+    height: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+  }
+  
+  .chat-container {
+    padding: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100vh !important;
+  }
+  
+  /* Theme adaptation - background colors */
+  [data-theme="light"] .chat-container,
+  [data-theme="light"] body,
+  [data-theme="light"] #app,
+  [data-theme="light"] .el-container {
+    background-color: #ffffff !important;
+    color: #333333 !important;
+  }
+  
+  [data-theme="dark"] .chat-container,
+  [data-theme="dark"] body,
+  [data-theme="dark"] #app,
+  [data-theme="dark"] .el-container {
+    background-color: #1c1c1e !important;
+    color: #ffffff !important;
+  }
+  
+  /* Header styling - base styles */
+  .chat-header {
+    border-bottom: none !important;
+    box-shadow: none !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    padding: 12px 16px !important;
+    height: auto !important;
+    position: relative !important;
+    z-index: 2 !important;
+  }
+  
+  /* Theme adaptation for header */
+  [data-theme="light"] .chat-header {
+    background-color: #ffffff !important;
+  }
+  
+  [data-theme="dark"] .chat-header {
+    background-color: #1c1c1e !important;
+  }
+  
+  /* App title styling - base */
+  .chat-header-title {
+    font-size: 16px !important;
+    font-weight: 500 !important;
+    display: flex !important;
+    align-items: center !important;
+  }
+  
+  /* Theme adaptation for title */
+  [data-theme="light"] .chat-header-title {
+    color: #333333 !important;
+  }
+  
+  [data-theme="dark"] .chat-header-title {
+    color: #ffffff !important;
+  }
+  
+  /* Button styling - base */
+  .menu-button, 
+  .el-button.is-text,
+  .header-actions .el-button {
+    padding: 4px !important;
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+  
+  /* Theme adaptation for buttons */
+  [data-theme="light"] .menu-button,
+  [data-theme="light"] .el-button.is-text,
+  [data-theme="light"] .header-actions .el-button {
+    color: #333333 !important;
+  }
+  
+  [data-theme="dark"] .menu-button,
+  [data-theme="dark"] .el-button.is-text,
+  [data-theme="dark"] .header-actions .el-button {
+    color: #ffffff !important;
+  }
+  
+  /* ===== Main Content Area ===== */
+  .content-container {
+    flex: 1 !important;
+    overflow-y: auto !important;
+    padding: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+  
+  /* Theme adaptation for content container */
+  [data-theme="light"] .content-container {
+    background-color: #f8f8f8 !important;
+  }
+  
+  [data-theme="dark"] .content-container {
+    background-color: #1c1c1e !important;
+  }
+
+  /* Conversation container - holds all messages */
+  .conversation-container {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 !important;
+    padding: 8px 8px !important; /* Reduced padding to maximize screen space */
+  }
+  
+  /* ===== Message Container Styling ===== */
+  /* Hide default avatars but show gradient avatar */
+  .message-container .avatar.assistant-avatar {
+    display: none !important;
+  }
+  
+  /* Style for the gradient user avatar */
+  .gradient-avatar {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 40px !important;
+    height: 40px !important;
+    border-radius: 50% !important;
+    background: linear-gradient(135deg, #5aa154, #e9a74c, #e77051) !important;
+    color: white !important;
+    font-size: 15px !important;
+    margin-left: auto !important;
+  }
+  
+  /* Basic message container */
+  .message-container {
+    margin: 8px 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    position: relative !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+  
+  /* Hide all message headers in mobile view */
+  .message-header {
+    display: none !important;
+  }
+  
+  /* User message styling - right aligned */
+  .message-container.role-user {
+    align-items: flex-end !important;
+  }
+  
+  /* User bubble styling with theme adaptation */
+  .message-container.role-user .message-bubble {
+    border-radius: 18px !important;
+    padding: 10px 14px !important;
+    max-width: 90% !important; /* Increased max width */
+    text-align: left !important;
+    margin: 4px 4px 4px 0 !important; /* Added small right margin */
+    position: relative !important;
+  }
+  
+  /* User bubble styling with gradient background */
+  .message-container.role-user .message-bubble {
+    background: linear-gradient(135deg, #5aa154, #e9a74c, #e77051) !important;
+    color: #ffffff !important;
+  }
+  
+  /* User content styling */
+  .message-container.role-user .message-content {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-end !important;
+    width: 100% !important;
+  }
+  
+  /* AI message styling - left-aligned with appropriate spacing */
+  .message-container.role-assistant {
+    align-items: flex-start !important;
+    margin: 8px 0 !important;
+  }
+  
+  /* AI message bubble - base styling */
+  .message-container.role-assistant .message-bubble {
+    border-radius: 18px !important;
+    padding: 10px 14px !important;
+    margin: 4px 12px 4px 8px !important; /* Asymmetric margins */
+    width: auto !important;
+    max-width: 96% !important; /* Maximize width usage */
+    text-align: left !important;
+    position: relative !important;
+  }
+  
+  /* Improve list styling in AI messages */
+  .message-container.role-assistant .message-bubble ul {
+    padding-left: 20px !important;
+    margin: 8px 0 !important;
+  }
+  
+  .message-container.role-assistant .message-bubble li {
+    margin-bottom: 8px !important;
+  }
+  
+  /* Theme-specific AI bubble styling */
+  [data-theme="light"] .message-container.role-assistant .message-bubble {
+    background-color: #ffffff !important; /* Light gray for light theme */
+    color: black !important;
+  }
+  
+  [data-theme="dark"] .message-container.role-assistant .message-bubble {
+    background-color: #29292f !important; /* Darker gray for dark theme */
+    color: #ffffff !important;
+  }
+  
+  /* AI message text */
+  .message-container.role-assistant .message-text {
+    font-size: 15px !important;
+    line-height: 1.5 !important;
+    white-space:  !important;
+  }
+  
+  /* Ellipsis dots as shown in the reference image */
+  .message-container.role-assistant .ellipsis-dots {
+    margin-top: 4px !important;
+    display: flex !important;
+    align-items: center !important;
+  }
+  
+  .message-container.role-assistant .ellipsis-dot {
+    width: 4px !important;
+    height: 4px !important;
+    border-radius: 50% !important;
+    background-color: #999 !important;
+    margin-right: 3px !important;
+    opacity: 0.7 !important;
+  }
+  
+  /* Add this class to message-text elements when needed */
+  .typing-indicator {
+    display: flex !important;
+    align-items: center !important;
+    margin-top: 4px !important;
+  }
+  
+  .typing-indicator .dot {
+    width: 4px !important;
+    height: 4px !important;
+    border-radius: 50% !important;
+    background-color: #999 !important;
+    margin-right: 3px !important;
+    opacity: 0.7 !important;
+  }
+  
+  /* Hide message stats on mobile for cleaner interface */
+  .message-stats {
+    display: none !important;
+  }
+  
+  /* 全局按钮样式 - 适用于桌面端和移动端 */
+  .action-btn, .mobile-action-btn {
+    width: 28px !important;
+    height: 28px !important;
+    padding: 4px !important;
+    margin: 0 2px !important;
+    background-color: transparent !important;
+    border: none !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 50% !important; /* Make buttons circular */
+  }
+  
+  /* Theme-specific button colors */
+  [data-theme="light"] .action-btn,
+  [data-theme="light"] .mobile-action-btn {
+    color: #555555 !important;
+  }
+  
+  [data-theme="dark"] .action-btn,
+  [data-theme="dark"] .mobile-action-btn {
+    color: #cccccc !important;
+  }
+  
+  /* Hover effects for buttons */
+  [data-theme="light"] .action-btn:hover,
+  [data-theme="light"] .mobile-action-btn:hover {
+    background-color: rgba(0, 0, 0, 0.05) !important;
+  }
+  
+  [data-theme="dark"] .action-btn:hover,
+  [data-theme="dark"] .mobile-action-btn:hover {
+    background-color: rgba(255, 255, 255, 0.1) !important;
+  }
+  
+  /* Button container styling - match mobile action positioning */
+  .action-buttons-container {
+    display: flex !important;
+    align-items: center !important;
+    padding: 2px 0 !important;
+    margin: 8px !important;
+  }
+  
+  /* User messages right-aligned on both mobile and desktop */
+  .message-container.role-user .action-buttons-container {
+    justify-content: flex-end !important;
+  }
+  
+  /* AI messages left-aligned on both mobile and desktop */
+  .message-container.role-assistant .action-buttons-container {
+    justify-content: flex-start !important;
+  }
+  
+
+  
+  /* Mobile action button container */
+  .mobile-actions {
+    display: flex !important;
+    justify-content: flex-start !important;
+    padding: 2px 0 !important;
+    margin: 8px !important;
+    width: 100% !important;
+  }
+  
+  /* Message action buttons container */
+  .message-actions {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    width: 100% !important;
+    margin: 0 !important;
+  }
+  
+  /* User message actions right aligned */
+  .message-container.role-user .mobile-actions {
+    justify-content: flex-end !important;
+  }
+  
+  /* 移动端按钮样式使用全局定义，这里不需要重复 */
+  
+  /* 统一所有按钮的图标大小 */
+  .action-btn .el-icon,
+  .mobile-action-btn .el-icon {
+    font-size: 15px !important;
+  }
+  
+  /* Simplify header */
+  .message-header {
+    margin-bottom: 4px !important;
+    padding: 0 4px !important;
+  }
+  
+  .message-role {
+    font-size: 12px !important;
+    font-weight: normal !important;
+    color: #888 !important;
+    margin-bottom: 2px !important;
+  }
+  
+  .message-time {
+    font-size: 11px !important;
+    color: #aaa !important;
+  }
+  
+  /* Thinking bubble simplification */
+  .thinking-bubble {
+    background-color: rgba(240, 240, 245, 0.5) !important;
+    border-radius: 12px !important;
+    padding: 8px 12px !important;
+    margin: 0 0 8px 0 !important;
+    font-size: 13px !important;
+  }
+  
+  .thinking-header {
+    padding: 4px !important;
+  }
+  
+  .thinking-title {
+    font-size: 13px !important;
+  }
+  
+  /* ===== Chat Input Styling ===== */
+  .chat-input-container {
+    padding: 10px 16px !important;
+    display: flex !important;
+    align-items: center !important;
+    position: relative !important;
+    z-index: 10 !important;
+    margin-top: auto !important;
+    border-top-width: 1px !important;
+    border-top-style: solid !important;
+  }
+  
+  /* Theme adaptation for input container */
+  [data-theme="light"] .chat-input-container {
+    background-color: #ffffff !important;
+    border-top-color: #ffffff !important;
+  }
+  
+  [data-theme="dark"] .chat-input-container {
+    background-color: #29292f !important;
+    border-top-color: #39393f !important;
+  }
+  
+  /* Message input field container */
+  .chat-input-wrapper {
+    display: flex !important;
+    align-items: center !important;
+    flex: 1 !important;
+    border-radius: 18px !important;
+    border: none !important;
+  }
+  
+  /* Theme adaptation for input wrapper */
+  [data-theme="light"] .chat-input-wrapper {
+    background-color: #f1f1f1 !important;
+  }
+  
+  [data-theme="dark"] .chat-input-wrapper {
+    background-color: #36363f !important;
+  }
+  
+  /* Input action buttons (microphone, etc.) */
+  .chat-input-container .microphone-btn,
+  .chat-input-container .el-button:first-child {
+    border: none !important;
+    padding: 8px !important;
+    margin-right: 10px !important;
+    background: transparent !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+  
+  /* Theme adaptation for input buttons */
+  [data-theme="light"] .chat-input-container .microphone-btn,
+  [data-theme="light"] .chat-input-container .el-button:first-child {
+    color: #777 !important;
+  }
+  
+  [data-theme="dark"] .chat-input-container .microphone-btn,
+  [data-theme="dark"] .chat-input-container .el-button:first-child {
+    color: #999 !important;
+  }
+  
+  /* Input field */
+  .chat-input-textarea,
+  .chat-input textarea,
+  .el-textarea__inner {
+    border-radius: 18px !important;
+    padding: 10px 15px !important;
+    min-height: 42px !important;
+    max-height: 120px !important;
+    font-size: 15px !important;
+    border: none !important;
+    box-shadow: none !important;
+    flex: 1 !important;
+    resize: none !important;
+  }
+  
+  /* Theme adaptation for input field */
+  [data-theme="light"] .chat-input-textarea,
+  [data-theme="light"] .chat-input textarea,
+  [data-theme="light"] .el-textarea__inner {
+    background-color: #f1f1f1 !important;
+    color: #333333 !important;
+  }
+  
+  [data-theme="dark"] .chat-input-textarea,
+  [data-theme="dark"] .chat-input textarea,
+  [data-theme="dark"] .el-textarea__inner {
+    background-color: #36363f !important;
+    color: #ffffff !important;
+  }
+  
+  /* El-textarea overrides */
+  .el-textarea .el-textarea__inner {
+    border: none !important;
+    box-shadow: none !important;
+  }
+  
+  .el-textarea .el-textarea__inner:focus {
+    box-shadow: none !important;
+  }
+  
+  /* Placeholder styling */
+  [data-theme="light"] .chat-input-textarea::placeholder,
+  [data-theme="light"] .el-textarea__inner::placeholder {
+    color: #999 !important;
+    font-size: 15px !important;
+  }
+  
+  [data-theme="dark"] .chat-input-textarea::placeholder,
+  [data-theme="dark"] .el-textarea__inner::placeholder {
+    color: #888 !important;
+    font-size: 15px !important;
+  }
+  
+  /* Action buttons container */
+  .chat-input-actions {
+    display: flex !important;
+    margin-left: 10px !important;
+  }
+  
+  /* Action buttons styles */
+  .chat-input-actions button,
+  .send-button,
+  .chat-input-container .el-button.is-circle {
+    width: 36px !important;
+    height: 36px !important;
+    padding: 0 !important;
+    border: none !important;
+    background: transparent !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+  
+  /* Trash button */
+  [data-theme="light"] .chat-input-actions .trash-button,
+  [data-theme="light"] .chat-input-container .el-button.trash-button {
+    color: #ff6b6b !important;
+  }
+  
+  [data-theme="dark"] .chat-input-actions .trash-button,
+  [data-theme="dark"] .chat-input-container .el-button.trash-button {
+    color: #ff6b6b !important;
+  }
+  
+  /* Send button */
+  [data-theme="light"] .chat-input-actions .send-button,
+  [data-theme="light"] .chat-input-container .el-button.send-button {
+    color: #3b82f6 !important;
+  }
+  
+  [data-theme="dark"] .chat-input-actions .send-button,
+  [data-theme="dark"] .chat-input-container .el-button.send-button {
+    color: #3b82f6 !important;
+  }
+  
+  /* Bottom bar with suggested questions */
+  .chat-suggestion-bar {
+    display: flex !important;
+    padding: 8px 16px 16px 16px !important;
+    justify-content: center !important;
+    flex-wrap: wrap !important;
+  }
+  
+  /* Theme adaptation for suggestion bar */
+  [data-theme="light"] .chat-suggestion-bar {
+    background-color: #f9f9f9 !important;
+  }
+  
+  [data-theme="dark"] .chat-suggestion-bar {
+    background-color: #29292f !important;
+  }
+  
+  /* Style for suggested question pills */
+  .chat-suggestion-item {
+    border-radius: 16px !important;
+    padding: 8px 14px !important;
+    margin: 4px !important;
+    font-size: 14px !important;
+    white-space: nowrap !important;
+    display: inline-block !important;
+  }
+  
+  /* Theme adaptation for suggestion pills */
+  [data-theme="light"] .chat-suggestion-item {
+    background-color: #e9e9e9 !important;
+    color: #555 !important;
+  }
+  
+  [data-theme="dark"] .chat-suggestion-item {
+    background-color: #39393f !important;
+    color: #cccccc !important;
+  }
+  
+  /* ===== Code blocks & markdown styling ===== */
+  .message-bubble pre {
+    margin: 8px 0 !important;
+    border-radius: 8px !important;
+    font-size: 13px !important;
+  }
+  
+  .message-bubble code {
+    font-size: 13px !important;
+  }
+  
+  /* Simplify code block controls */
+  .code-block-controls {
+    top: 5px !important;
+    right: 5px !important;
+  }
+  
+  .code-block-control-button {
+    width: 24px !important;
+    height: 24px !important;
+    opacity: 0.7 !important;
+  }
+  
+  /* Make tables more mobile-friendly */
+  .message-bubble table {
+    font-size: 13px !important;
+    display: block !important;
+    overflow-x: auto !important;
+    white-space: nowrap !important;
+    width: fit-content;
+  }
+  
+  /* Loading indicators */
+  .loading-circle {
+    width: 16px !important;
+    height: 16px !important;
+  }
+  
+  .loading-text {
+    font-size: 14px !important;
+  }
+  
+  /* Adjust thinking dots animation */
+  .thinking-dots .dot {
+    width: 4px !important;
+    height: 4px !important;
+    margin: 0 1px !important;
+  }
+}

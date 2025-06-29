@@ -182,41 +182,60 @@
           transform: translateY(-2px) !important;
         }
       }
-      
-      &.el-button--primary {
-        background: linear-gradient(135deg, #4284f5, #42a5f5) !important;
-        border: none !important;
-        position: relative !important;
-        overflow: hidden !important;
-        
-        &::before {
-          content: '' !important;
-          position: absolute !important;
-          top: -50% !important;
-          left: -50% !important;
-          width: 200% !important;
-          height: 200% !important;
-          background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0) 70%) !important;
-          opacity: 0 !important;
-          transform: scale(0.5) !important;
-          transition: transform 0.6s, opacity 0.6s !important;
-        }
-        
-        &:hover {
-          transform: translateY(-2px) !important;
-          box-shadow: 0 6px 15px rgba(66, 132, 245, 0.35) !important;
-          
-          &::before {
-            opacity: 1 !important;
-            transform: scale(1) !important;
-          }
-        }
-        
-        &:active {
-          transform: translateY(0) !important;
-        }
-      }
     }
+  }
+}
+
+// 文本按钮全局样式
+.el-button--text {
+  color: #333333 !important;
+  
+  &:hover {
+    color: #555555 !important;
+  }
+  
+  // 深色模式下的文本按钮
+  [data-theme="dark"] & {
+    color: #cccccc !important;
+    
+    &:hover {
+      color: #ffffff !important;
+    }
+  }
+}
+
+// 主要按钮样式
+.el-button--primary {
+  background: linear-gradient(135deg, #4284f5, #42a5f5) !important;
+  border: none !important;
+  position: relative !important;
+  overflow: hidden !important;
+  
+  &::before {
+    content: '' !important;
+    position: absolute !important;
+    top: -50% !important;
+    left: -50% !important;
+    width: 200% !important;
+    height: 200% !important;
+    background: radial-gradient(circle, rgba(225, 10, 10, 0.3) 0%, rgba(204, 17, 17, 0) 70%) !important;
+    opacity: 0 !important;
+    transform: scale(0.5) !important;
+    transition: transform 0.6s, opacity 0.6s !important;
+  }
+  
+  &:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 6px 15px rgba(66, 132, 245, 0.35) !important;
+    
+    &::before {
+      opacity: 1 !important;
+      transform: scale(1) !important;
+    }
+  }
+  
+  &:active {
+    transform: translateY(0) !important;
   }
 }
 

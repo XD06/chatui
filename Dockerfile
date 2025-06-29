@@ -35,5 +35,5 @@ COPY --from=build /app/dist ./dist
 # Expose port 3000
 EXPOSE 3000
 
-# Start the Express server
-CMD ["node", "server/index.js"] 
+# Start the Express server with ES modules support
+CMD ["node", "--experimental-json-modules", "server/index.js"] 

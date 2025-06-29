@@ -26,6 +26,8 @@ import './assets/styles/element-overrides.scss'
 import './assets/main.css'
 // 导入Markdown扩展样式
 import './assets/styles/markdown-extensions.scss'
+// 导入全局按钮控制样式
+import './assets/globalStyles.css'
 
 // 优先创建应用实例，提前渲染初始UI
 const app = createApp(App)

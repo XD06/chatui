@@ -12,8 +12,6 @@ TECHNICAL_DOCUMENTATION.md
 GIT_SETUP.md
 CHANGELOG.md
 CHANGES.md
-.env
-.env.local
 .env.development
 .env.test
 .env.production

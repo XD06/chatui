@@ -1,5 +1,6 @@
 <template>
   <div id="app" :class="{ 'app-loaded': isAppLoaded }">
+    
     <!-- Loading Screen - Will be visible immediately with inline critical styles -->
     <div class="loading-screen" v-if="!isAppLoaded || !resourcesLoaded">
       <div class="loading-content">
@@ -52,6 +53,7 @@ import MigrationHelper from './components/MigrationHelper.vue'
 import PasswordScreen from './components/PasswordScreen.vue'
 import ThemeSettings from './components/ThemeSettings.vue'
 import './assets/mobileFixStyles.css' // Import mobile fixes CSS
+import './assets/mobileMinimalistStyle.css' // Import minimalist mobile style
 import { checkAuthRequired } from './utils/apiService'
 
 const settingsStore = useSettingsStore()

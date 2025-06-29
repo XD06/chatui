@@ -1,6 +1,11 @@
 {
 	"folders": [
 		{
+			"name": "py-googletrans-main",
+			"path": "../../py-googletrans-main"
+		},
+		{
+			"name": "AIchat",
 			"path": "."
 		}
 	]

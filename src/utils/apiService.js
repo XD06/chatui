@@ -9,10 +9,17 @@ let isBackendAvailable = null; // null表示未检查，true表示可用，false
  */
 const getApiBaseUrl = () => {
   // 检测当前部署环境
-  if (window.location.hostname.includes('netlify.app')) {
+  const hostname = window.location.hostname;
+  
+  // Netlify部署环境
+  if (hostname.includes('netlify.app') || hostname.includes('netlify.com')) {
+    console.log('检测到Netlify部署环境');
     return '/.netlify/functions';
   }
-  // 默认为 Vercel 或本地开发环境
+  
+  // Vercel部署环境 (默认)
+  // 包括vercel.app域名或自定义域名
+  console.log('使用默认API路径 (Vercel或本地开发环境)');
   return '/api';
 };
 
@@ -293,8 +300,9 @@ export const getModelsList = async (apiKey, apiEndpoint, userCustomizedAPI = fal
     if (!useDirectApi && backendAvailable) {
       // 使用后端API
       console.log('使用后端API获取模型列表');
-      useModlesurl = normalizeModelsUrl(getApiBaseUrl());
-      console.log('请求模型列表URL:', userModlesurl);
+      // 恢复使用normalizeModelsUrl函数，现在后端已支持标准格式路由
+      const useModlesurl = normalizeModelsUrl(getApiBaseUrl());
+      console.log('请求模型列表URL:', useModlesurl);
       const response = await fetch(useModlesurl, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' }

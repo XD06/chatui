@@ -64,12 +64,14 @@ div[role="button"],
   
   /* 用户消息靠右占据整个宽度 */
   .message-container.role-user {
-    justify-content: flex-end !important;
+    justify-content: end !important;
   }
   
   /* AI消息靠左占据整个宽度 */
   .message-container.role-assistant {
-    justify-content: flex-start !important;
+    /* justify-content: center !important; */
+    display: block;
+    margin-left: 6%;
   }
   
   /* 消息内容宽度适应，但不超出屏幕 */

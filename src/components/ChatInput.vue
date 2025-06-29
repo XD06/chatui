@@ -306,8 +306,20 @@ const props = defineProps({
   }
 })
 
-// 定义组件的事件
+// 导出组件事件
 const emit = defineEmits(['send', 'clear', 'role-selected', 'pause'])
+
+// 对外暴露的方法，用于从外部设置消息并自动发送
+const setMessageAndSend = (text) => {
+  messageText.value = text
+  // 给一个微小的延迟，确保文字先设置到输入框
+  setTimeout(() => {
+    handleSend()
+  }, 10)
+}
+
+// 暴露给父组件的方法
+defineExpose({ setMessageAndSend })
 
 // 使用聊天存储
 const chatStore = useChatStore()
@@ -881,7 +893,7 @@ onUnmounted(() => {
   align-items: center;
   background-color: var(--chat-input-bg, #f5f5f7);
   border-radius: 24px;
-  padding: 8px 16px;
+ // padding: 8px 16px;
   margin: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   transition: all 0.3s ease;
@@ -1209,6 +1221,15 @@ onUnmounted(() => {
     &:hover {
       background-color: var(--el-color-primary-light-3);
       border-color: var(--el-color-primary-light-3);
+    }
+    
+    &.pause-button {
+      background-color: #f56c6c;
+      border-color: #f56c6c;
+      &:hover {
+        background-color: #f78989;
+        border-color: #f78989;
+      }
     }
   }
 }
@@ -1563,7 +1584,7 @@ onUnmounted(() => {
       text-align: center;
       
       .el-icon {
-        font-size: 24px;
+        font-size: 20px;
         margin-bottom: 5px;
         color: #909399;
       }

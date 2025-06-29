@@ -375,6 +375,7 @@ watch(() => settingsStore.isDarkMode, (newValue) => {
     width: 42px;
     height: 42px;
     right: 15px;
+    display: none;
     
     .el-icon {
       font-size: 20px;

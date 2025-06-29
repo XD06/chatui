@@ -337,7 +337,12 @@ router.post('/regenerate', async (req, res) => {
 });
 
 // 获取可用模型列表API端点 - 更新为使用后端代理
-router.get('/models', async (req, res) => {
+router.get('/models', handleModelsRequest);
+// 添加标准格式路由 - 与OpenAI API保持一致
+router.get('/v1/models', handleModelsRequest);
+
+// 提取模型处理逻辑为单独函数以便重用
+async function handleModelsRequest(req, res) {
   try {
     const apiKey = process.env.API_KEY;
     if (!apiKey) {
@@ -373,7 +378,7 @@ router.get('/models', async (req, res) => {
     console.error('获取模型列表错误:', error);
     return res.status(500).json({ error: '服务器错误', message: error.message });
   }
-});
+}
 
 // 提示词优化API端点
 router.post('/optimize', async (req, res) => {

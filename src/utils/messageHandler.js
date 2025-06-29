@@ -2,6 +2,8 @@ import { promptTemplates } from '../config/promptTemplates'
 import { optimizePrompt as apiOptimizePrompt, checkBackendAvailability } from './apiService'
 // 导入Markdown处理函数
 import { initializeMarkdown, applyMarkdownExtensions } from './markdownExtensions.js'
+// Import the URL normalization function
+import { normalizeChatCompletionsUrl } from './parsemodels.js'
 
 export const messageHandler = {
     formatMessage(role, content) {
@@ -228,16 +230,21 @@ export const messageHandler = {
      * @param {boolean} options.isRegeneration - 是否为重新生成操作
      */
     async processStreamResponse(response, { updateMessage, updateTokenCount, onError, onComplete, isRegeneration = false }) {
-        // 使用更短的输出间隔确保平滑体验，调整到更平衡的值
-        const CHAR_OUTPUT_INTERVAL = 1; // 减少到1ms，加快初始输出速度
-        const MAX_RETRIES = 3;
-        const TIMEOUT_DURATION = 5000;
+        // 固定的小时间间隔，确保平滑输出
+        const OUTPUT_INTERVAL = 10; // 固定10ms的输出间隔
+        const MAX_RETRIES = 5; // 增加最大重试次数
+        const TIMEOUT_DURATION = 8000; // 增加超时阈值，给不稳定网络更多时间
+        const INITIAL_RETRY_DELAY = 500; // 初始重试延迟（毫秒）
+        const RECONNECT_DELAY = 2000; // 重连延迟
+        const HEALTH_CHECK_INTERVAL = 1000; // 健康检查间隔
         
         // 添加调试变量
         let totalCharsReceived = 0;
         let totalCharsOutput = 0;
         let lastLogTime = Date.now();
+        let lastNetworkActivity = Date.now(); // 跟踪最后一次网络活动时间
         let isEndingStream = false;
+        let healthCheckIntervalId = null;
 
         // 添加代码块和图表检测变量
         const CODE_BLOCK_START = "```";
@@ -250,44 +257,31 @@ export const messageHandler = {
         let mermaidBlocksReceived = 0;
 
         let retryCount = 0;
-            let full_content = '';
-            let full_reasonResponse = '';
+        let full_content = '';
+        let full_reasonResponse = '';
+        let full_reasoning_content = '';
         let isStreaming = true;
         let lastSuccessfulUpdate = Date.now();
         let isStopped = false;
         let lastTokenCount = 0;
         
-        // 创建字符缓冲区，用于平滑输出
-        let charBuffer = [];
-        let isOutputtingChars = false;
+        // 字符处理速度控制
+        let pendingChars = ''; // 待处理的字符缓冲区
+        let isProcessingOutput = false; // 是否正在处理输出
+        let outputIntervalId = null; // 输出定时器ID
+        let queuedContentUpdate = false; // 队列中是否有内容更新
         
-        // 创建计时器id，用于在需要时清除
-        let outputTimerId = null;
-        
-        // 监控输出状态
-        let lastOutputLength = 0;
-        let outputStallCount = 0;
-        
-        // 检测并处理特殊内容的辅助函数
-        const checkForSpecialContent = (char) => {
-            // 检测是否处于代码块中
-            if (!inCodeBlock && charBuffer.join('').endsWith(CODE_BLOCK_START)) {
-                // 检测到代码块开始
+        // 检测特殊内容（代码块、图表等）
+        const checkForSpecialContent = (content) => {
+            // 检测代码块并更新状态
+            if (!inCodeBlock && content.includes(CODE_BLOCK_START)) {
                 inCodeBlock = true;
-                currentCodeLang = "";
-                codeBlockBuffer = CODE_BLOCK_START;
                 console.log("检测到代码块开始");
+                codeBlockBuffer = CODE_BLOCK_START;
             } else if (inCodeBlock) {
-                codeBlockBuffer += char;
-
-                // 检测语言类型
-                if (codeBlockBuffer.length === 4 && codeBlockBuffer === "```m") {
-                    console.log("可能是mermaid图表");
-                }
+                codeBlockBuffer += content;
                 
-                // 检测代码块结束
-                if (codeBlockBuffer.endsWith(CODE_BLOCK_END) && 
-                    // 确保不是只有开始标记
+                if (codeBlockBuffer.includes(CODE_BLOCK_END) && 
                     codeBlockBuffer.length > (CODE_BLOCK_START.length + CODE_BLOCK_END.length)) {
                     inCodeBlock = false;
                     
@@ -306,229 +300,211 @@ export const messageHandler = {
             }
         };
         
-        // 输出字符的核心函数，一个字符一个字符地输出
-        const outputBufferedChars = () => {
-            if (charBuffer.length === 0 || isOutputtingChars || isStopped) return;
-            
-            isOutputtingChars = true;
-            
-            // 清除任何现有的定时器
-            if (outputTimerId) {
-                clearInterval(outputTimerId);
+        // 立即更新完整内容
+        const immediateFullUpdate = (content, reasonResponse) => {
+            try {
+                // 应用Markdown处理
+                const processedContent = this.processContentWithFullMarkdown(content);
+                
+                updateMessage({
+                    role: 'assistant',
+                    content: processedContent,
+                    complete: true,
+                    reason: reasonResponse
+                });
+            } catch (error) {
+                console.error('更新完整内容时出错:', error);
             }
+        };
+        
+        // 启动平滑输出处理
+        const startSmoothOutput = () => {
+            if (isProcessingOutput) return;
+            isProcessingOutput = true;
             
-            // 定期输出状态日志
-            const logStatus = () => {
-                const now = Date.now();
-                if (now - lastLogTime > 2000) { // 每2秒记录一次
-                    console.log(`输出状态: 缓冲区大小=${charBuffer.length}, 已输出=${totalCharsOutput}/${totalCharsReceived} 字符, 代码块=${codeBlocksReceived}, 图表=${mermaidBlocksReceived}`);
-                    lastLogTime = now;
-                }
-            };
-            
-            outputTimerId = setInterval(() => {
-                if (charBuffer.length === 0) {
-                    // 如果这是流的结束，并且我们已经清空了缓冲区
+            outputIntervalId = setInterval(() => {
+                if (pendingChars.length === 0) {
                     if (isEndingStream) {
+                        // 如果流已结束且没有更多内容，清理定时器
+                        clearInterval(outputIntervalId);
+                        isProcessingOutput = false;
+                        
+                        // 强制一次最终更新，确保所有内容都显示
+                        if (queuedContentUpdate) {
+                            immediateFullUpdate(full_content, full_reasonResponse);
+                            queuedContentUpdate = false;
+                        }
+                        
                         console.log(`输出完成: 共输出 ${totalCharsOutput} 个字符, 包含 ${codeBlocksReceived} 个代码块和 ${mermaidBlocksReceived} 个图表`);
                     }
-                    
-                    clearInterval(outputTimerId);
-                    isOutputtingChars = false;
                     return;
                 }
                 
                 if (isStopped) {
                     console.log('输出被手动终止');
-                    clearInterval(outputTimerId);
-                    isOutputtingChars = false;
+                    clearInterval(outputIntervalId);
+                    isProcessingOutput = false;
                     return;
                 }
-                
-                // 一次处理多个字符，根据缓冲区大小动态调整
-                const batchSize = Math.min(
-                    // 如果缓冲区很大，一次处理更多字符
-                    charBuffer.length > 500 ? 10 : 
-                    charBuffer.length > 200 ? 5 : 
-                    charBuffer.length > 50 ? 3 : 1,
-                    charBuffer.length // 确保不超过缓冲区大小
-                );
-                
-                let batchContent = '';
-                for (let i = 0; i < batchSize; i++) {
-                const char = charBuffer.shift();
-                    batchContent += char;
-                // 检查特殊内容
-                checkForSpecialContent(char);
-                }
-                
-                full_content += batchContent;
-                totalCharsOutput += batchContent.length;
-                
-                // 应用Markdown处理到完整内容
-                const processedContent = this.processContentWithFullMarkdown(full_content);
-                
-                // 将当前内容更新到UI
-                updateMessage({
-                    content: processedContent || full_content,
-                    thinkingContent: full_reasonResponse
-                });
-                
-                // 监控是否存在停滞
-                if (full_content.length === lastOutputLength) {
-                    outputStallCount++;
-                    
-                    // 如果检测到输出停滞，自动释放一批字符（更积极地释放）
-                    if (outputStallCount > 3 && charBuffer.length > 0) {
-                        console.log(`检测到输出停滞，释放一批字符 (${Math.min(20, charBuffer.length)}个)`);
-                        const batchSize = Math.min(20, charBuffer.length);
-                        const batch = charBuffer.splice(0, batchSize).join('');
-                        
-                        // 在释放批次字符前，检查它们是否含有代码块或图表的开始/结束标记
-                        let tempContent = full_content;
-                        for (let i = 0; i < batch.length; i++) {
-                            tempContent += batch[i];
-                            checkForSpecialContent(batch[i]);
-                        }
-                        
-                        full_content = tempContent;
-                        totalCharsOutput += batch.length;
-                        
-            updateMessage({
-                            content: full_content,
-                            thinkingContent: full_reasonResponse
-                        });
-                        
-                        outputStallCount = 0;
-                    }
+
+                // 计算本次要输出的字符数量
+                // 对于小于100个字符的缓冲区，每次输出较少字符
+                // 对于大于100个字符的缓冲区，每次输出字符数量比例增加
+                let charsToOutput;
+                if (pendingChars.length <= 20) {
+                    charsToOutput = 1; // 每次只输出1个字符，非常平滑
+                } else if (pendingChars.length <= 100) {
+                    charsToOutput = Math.ceil(pendingChars.length * 0.1); // 输出10%的字符
+                } else if (pendingChars.length <= 500) {
+                    charsToOutput = Math.ceil(pendingChars.length * 0.15); // 输出15%的字符
                 } else {
-                    lastOutputLength = full_content.length;
-                    outputStallCount = 0;
+                    charsToOutput = Math.ceil(pendingChars.length * 0.2); // 输出20%的字符
                 }
                 
-                // 记录状态
-                logStatus();
+                // 提取要输出的字符
+                const outputContent = pendingChars.substring(0, charsToOutput);
+                pendingChars = pendingChars.substring(charsToOutput);
                 
-            }, CHAR_OUTPUT_INTERVAL); // 使用更短的间隔加快输出速度
-        };
-
-        // 添加刷新缓冲区的函数，确保缓冲区不会太大
-        const flushBufferIfNeeded = () => {
-            // 如果缓冲区超过特定大小，强制开始输出
-            if (charBuffer.length > 100 && !isOutputtingChars) {
-                console.log(`缓冲区达到阈值(${charBuffer.length}个字符)，开始输出`);
-                outputBufferedChars();
-            } else if (charBuffer.length > 1000) {
-                // 如果缓冲区非常大，释放一半以避免内存问题
-                console.log(`缓冲区极大(${charBuffer.length}个字符)，释放一半`);
-                const releaseCount = Math.floor(charBuffer.length / 2);
-                const releasedChars = charBuffer.splice(0, releaseCount).join('');
-                full_content += releasedChars;
-                totalCharsOutput += releasedChars.length;
+                // 检查特殊内容
+                checkForSpecialContent(outputContent);
                 
-                updateMessage({
-                    content: full_content,
-                    thinkingContent: full_reasonResponse
-                });
-            }
+                // 添加到完整内容
+                full_content += outputContent;
+                totalCharsOutput += outputContent.length;
+                
+                // 标记有内容更新
+                queuedContentUpdate = true;
+                
+                // 进行适度频率的UI更新 - 避免每次都更新UI造成性能问题
+                // 当缓冲区很小或即将清空时，进行更新
+                if (pendingChars.length <= 20 || pendingChars.length % 50 === 0) {
+                    queuedContentUpdate = false;
+                    
+                    // 应用Markdown处理到完整内容
+                    const processedContent = this.processContentWithFullMarkdown(full_content);
+                    
+                    // 输出增量更新
+                    updateMessage({
+                        role: 'assistant',
+                        content: processedContent,
+                        complete: false,
+                        reason: full_reasonResponse
+                    });
+                }
+            }, OUTPUT_INTERVAL);
         };
-
-        // 全部内容更新函数（仅在结束时使用）
-        const immediateFullUpdate = (content, thinkingContent) => {
-            if (isStopped) return;
-            
-            // 强制清除所有定时器
-            if (outputTimerId) {
-                clearInterval(outputTimerId);
-                outputTimerId = null;
-            }
-            
-            console.log(`强制最终更新: 内容长度=${content.length}, 缓冲区=${charBuffer.length}`);
-            
-            // 应用Markdown处理
-            const processedContent = this.processContentWithFullMarkdown(content);
-            
-            updateMessage({
-                content: processedContent || content,
-                thinkingContent: thinkingContent
-            });
-        };
-
+        
+        // 处理数据块
         const processChunk = async (chunk) => {
+            if (!chunk.trim()) return false;
+            
             try {
-                const lines = chunk.split('\n').filter(line => line.trim() !== '');
+                // 查找并解析SSE数据行
+                const lines = chunk.split('\n');
                 let hasUpdate = false;
                 
                 for (const line of lines) {
-                    if (!line.includes('data: ')) continue;
-                    
-                        const jsonStr = line.replace('data: ', '');
-                        if (jsonStr === '[DONE]') {
-                        console.log('收到流结束标记 [DONE]');
-                        isStreaming = false;
-                        isEndingStream = true;
-                            continue;
-                    }
-
-                    try {
-                        const jsData = JSON.parse(jsonStr);
-                        let contentUpdated = false;
+                    if (line.startsWith('data:')) {
+                        const data = line.substring(5).trim();
                         
-                        if (jsData.choices[0].delta.reasoning_content) {
-                            // 修改：将思考内容也添加到字符缓冲区，实现逐字显示
-                            const newThinkingContent = jsData.choices[0].delta.reasoning_content;
-                            
-                            // 将新的思考内容添加到全局变量，用于最终更新
-                            full_reasonResponse += newThinkingContent;
-                            
-                            // 同样每次更新UI，实现逐字显示
-                            updateMessage({
-                                content: full_content,
-                                thinkingContent: full_reasonResponse
-                            });
-                            
-                            contentUpdated = true;
+                        // 检查是否是结束标记
+                        if (data === '[DONE]') {
+                            console.log('接收到流结束标记: [DONE]');
+                            isStreaming = false;
+                            return true;
                         }
                         
-                        if (jsData.choices[0].delta.content) {
-                            const newContent = jsData.choices[0].delta.content;
-                            totalCharsReceived += newContent.length;
-                            
-                            // 将每个字符添加到缓冲区
-                            for (let i = 0; i < newContent.length; i++) {
-                                charBuffer.push(newContent[i]);
-                            }
-                            
-                            // 如果没有正在输出，则开始输出字符
-                            if (!isOutputtingChars) {
-                                outputBufferedChars();
-                            }
-                            
-                            // 定期检查缓冲区是否需要刷新
-                            flushBufferIfNeeded();
-                            
-                            contentUpdated = true;
-                        }
-
-                        if (contentUpdated) {
-                            hasUpdate = true;
-                            
-                            // 计算token数量（包括将要显示的内容）
-                            const newTokenCount = this.countTokens(full_content + charBuffer.join(''));
-                            if (newTokenCount !== lastTokenCount) {
-                                updateTokenCount({
-                                    prompt_tokens: 0,
-                                    completion_tokens: newTokenCount,
-                                    total_tokens: newTokenCount
-                                });
-                                lastTokenCount = newTokenCount;
-                            }
-
+                        try {
+                            // 解析JSON数据
+                            const parsed = JSON.parse(data);
                             lastSuccessfulUpdate = Date.now();
+                            
+                            // 处理文本增量
+                            if (parsed.choices && parsed.choices.length > 0) {
+                                const choice = parsed.choices[0];
+                                
+                                // 更新令牌计数
+                                if (parsed.usage && typeof updateTokenCount === 'function') {
+                                    if (parsed.usage.total_tokens !== lastTokenCount) {
+                                        lastTokenCount = parsed.usage.total_tokens;
+                                        updateTokenCount(parsed.usage);
+                                    }
+                                }
+                                
+                                // 检查是否为流式响应的结束
+                                if (choice.finish_reason) {
+                                    full_reasonResponse = choice.finish_reason;
+                                    console.log('流式响应接收完成，原因:', choice.finish_reason);
+                                    isStreaming = false;
+                                    continue;
+                                }
+                                
+                                // 处理内容增量
+                                let contentDelta = null;
+                                
+                                // 处理不同API格式的响应
+                                if (choice.delta && choice.delta.content) {
+                                    // OpenAI格式
+                                    contentDelta = choice.delta.content;
+                                } else if (choice.delta && choice.delta.text) {
+                                    // 兼容Mistral/Claude的格式
+                                    contentDelta = choice.delta.text;
+                                } else if (choice.text) {
+                                    // 最早期的OpenAI格式
+                                    contentDelta = choice.text;
+                                } else if (choice.message && choice.message.content) {
+                                    // 常规完整响应
+                                    contentDelta = choice.message.content;
+                                }
+
+                                // 处理推理内容
+                                let reasoningContentDelta = null;
+                                if (choice.delta && choice.delta.reasoning_content) {
+                                    reasoningContentDelta = choice.delta.reasoning_content;
+                                } else if (choice.reasoning_content) {
+                                    reasoningContentDelta = choice.reasoning_content;
+                                } else if (choice.message && choice.message.reasoning_content) {
+                                    reasoningContentDelta = choice.message.reasoning_content;
+                                }
+                                
+                                // 如果有增量内容
+                                if (contentDelta || reasoningContentDelta) {
+                                    hasUpdate = true;
+                                    if (contentDelta) {
+                                        totalCharsReceived += contentDelta.length;
+                                        // 将增量内容直接添加到待处理字符缓冲区
+                                        pendingChars += contentDelta;
+                                    }
+                                    
+                                    // 处理推理内容
+                                    if (reasoningContentDelta) {
+                                        // 累加推理内容
+                                        full_reasoning_content += reasoningContentDelta;
+                                        updateMessage({
+                                            role: 'assistant',
+                                            content: full_content,
+                                            reasoningContent: full_reasoning_content,
+                                            complete: false,
+                                            reason: full_reasonResponse
+                                        });
+                                    }
+                                    
+                                    // 确保输出处理正在运行
+                                    if (!isProcessingOutput) {
+                                        startSmoothOutput();
+                                    }
+                                    
+                                    // 定期记录统计信息
+                                    const currentTime = Date.now();
+                                    if (currentTime - lastLogTime > 3000) {
+                                        console.log(`流处理状态: 已接收=${totalCharsReceived}, 已输出=${totalCharsOutput}, 待处理=${pendingChars.length}`);
+                                        lastLogTime = currentTime;
+                                    }
+                                }
+                            }
+                        } catch (jsonError) {
+                            console.warn('无法解析SSE数据:', jsonError, '原始数据:', data);
                         }
-                    } catch (e) {
-                        console.warn('解析JSON失败:', e);
-                        continue;
                     }
                 }
                 
@@ -539,16 +515,52 @@ export const messageHandler = {
             }
         };
 
+        // 健康检查函数 - 监控流式响应状态
+        const startHealthCheck = () => {
+            if (healthCheckIntervalId) {
+                clearInterval(healthCheckIntervalId);
+            }
+            
+            healthCheckIntervalId = setInterval(() => {
+                const now = Date.now();
+                const timeSinceLastActivity = now - lastNetworkActivity;
+                
+                // 如果长时间没有网络活动但仍在流式处理中
+                if (isStreaming && !isEndingStream && timeSinceLastActivity > TIMEOUT_DURATION) {
+                    console.warn(`健康检查: ${timeSinceLastActivity}ms没有网络活动，检查连接状态...`);
+                    
+                    // 添加状态更新，让用户知道正在尝试恢复连接
+                    if (pendingChars.length > 0) {
+                        // 保存当前内容，避免重复
+                        const currentContent = full_content;
+                        
+                        // 添加一个临时信息
+                        const reconnectingMessage = '\n\n*[正在尝试恢复连接...]*';
+                        if (!full_content.endsWith(reconnectingMessage)) {
+                            pendingChars += reconnectingMessage;
+                        }
+                    }
+                }
+            }, HEALTH_CHECK_INTERVAL);
+        };
+
+        // 处理流式响应
         const processStream = async () => {
             console.log('开始处理流式响应');
+            startHealthCheck(); // 启动健康检查
+            
             try {
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
                 let buffer = '';
+                let reconnectAttempts = 0;
 
                 while (isStreaming) {
                     try {
                         const { done, value } = await reader.read();
+                        
+                        // 更新网络活动时间
+                        lastNetworkActivity = Date.now();
                         
                         // 检查流是否应该停止（例如，由于AbortController被触发）
                         if (!isStreaming) {
@@ -563,73 +575,87 @@ export const messageHandler = {
                                 await processChunk(buffer);
                             }
                             
-                            // 在流结束时刷新所有缓冲区字符
+                            // 在流结束时设置标志
                             isEndingStream = true;
-                            console.log(`流结束，剩余 ${charBuffer.length} 个字符在缓冲区`);
+                            console.log(`流接收结束，仍有 ${pendingChars.length} 个字符待处理`);
                             
-                            if (outputTimerId) {
-                                clearInterval(outputTimerId);
-                                outputTimerId = null;
+                            // 如果没有待处理字符，手动触发一次最终更新
+                            if (pendingChars.length === 0 && queuedContentUpdate) {
+                                immediateFullUpdate(full_content, full_reasonResponse);
+                                queuedContentUpdate = false;
                             }
                             
-                            // 确保所有缓冲区字符都添加到最终输出中
-                            if (charBuffer.length > 0) {
-                                console.log(`将剩余的 ${charBuffer.length} 个字符添加到最终输出`);
-                                full_content += charBuffer.join('');
-                                totalCharsOutput += charBuffer.length;
-                                charBuffer = [];
-                            }
-                            
-                            // 最终更新以确保显示完整内容
-                            immediateFullUpdate(full_content, full_reasonResponse);
                             break;
+                        }
+
+                        // 如果收到了数据，重置重连计数
+                        if (value && value.length > 0) {
+                            reconnectAttempts = 0; 
                         }
 
                         buffer += decoder.decode(value, { stream: true });
                         
-                        // 使用更保守的分块方法
-                        const chunks = [];
-                        let startIdx = 0;
-                        let endIdx;
+                        // 分块处理
+                        const chunks = buffer.split('\n\n');
+                        buffer = chunks.pop() || ''; // 最后一个可能不完整
                         
-                        while ((endIdx = buffer.indexOf('\n\n', startIdx)) !== -1) {
-                            chunks.push(buffer.substring(startIdx, endIdx + 2));
-                            startIdx = endIdx + 2;
-                        }
-                        
-                        if (startIdx < buffer.length) {
-                            buffer = buffer.substring(startIdx);
-                        } else {
-                            buffer = '';
-                        }
-
                         for (const chunk of chunks) {
-                            // 再次检查是否应该停止处理
-                            if (!isStreaming) {
-                                console.log('流处理在处理块时被中断');
-                                isStopped = true;
-                                break;
-                            }
-                            
+                            if (!isStreaming) break;
                             if (chunk.trim()) {
-                                await processChunk(chunk);
+                                const success = await processChunk(chunk);
+                                // 如果处理成功，更新最后成功时间
+                                if (success) {
+                                    lastSuccessfulUpdate = Date.now();
+                                }
                             }
                         }
 
                         // 如果处理被中断，则退出循环
-                        if (isStopped) {
-                            break;
-                        }
+                        if (isStopped) break;
 
-                        // 检查超时
-                        if (Date.now() - lastSuccessfulUpdate > TIMEOUT_DURATION) {
-                            console.warn('流式响应超时，尝试重新连接...');
+                        // 改进的超时检测和恢复逻辑
+                        const inactiveTime = Date.now() - lastSuccessfulUpdate;
+                        if (inactiveTime > TIMEOUT_DURATION) {
+                            console.warn(`流式响应超时(${inactiveTime}ms)，尝试恢复连接...`);
+                            
+                            // 更新UI以通知用户
+                            if (pendingChars.length === 0) {
+                                pendingChars += '\n\n*[网络连接不稳定，正在尝试恢复...]*';
+                                if (!isProcessingOutput) {
+                                    startSmoothOutput();
+                                }
+                            }
+                            
+                            // 逐步增加重试次数，但不要无限重试
                             if (retryCount < MAX_RETRIES) {
                                 retryCount++;
-                                await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+                                // 使用指数退避策略
+                                const retryDelay = INITIAL_RETRY_DELAY * Math.pow(1.5, retryCount - 1);
+                                console.log(`尝试第${retryCount}次恢复，等待${retryDelay}ms...`);
+                                await new Promise(resolve => setTimeout(resolve, retryDelay));
                                 continue;
                             } else {
-                                throw new Error('流式响应超时');
+                                // 最后一次尝试完全重新连接
+                                if (reconnectAttempts < 2) { // 限制重连尝试次数
+                                    reconnectAttempts++;
+                                    console.warn(`重试耗尽，尝试第${reconnectAttempts}次完全重连...`);
+                                    
+                                    // 关闭当前reader
+                                    try {
+                                        reader.cancel().catch(e => console.error('取消reader错误:', e));
+                                    } catch (e) {
+                                        console.warn('取消reader时发生错误:', e);
+                                    }
+                                    
+                                    // 短暂延迟后重新开始 - 在实际应用中可能需要重新获取响应
+                                    await new Promise(resolve => setTimeout(resolve, RECONNECT_DELAY));
+                                    
+                                    // 重置重试计数器
+                                    retryCount = 0;
+                                    continue;
+                                }
+                                
+                                throw new Error(`流式响应在${inactiveTime}ms内无响应，已尝试恢复但失败`);
                             }
                         }
                     } catch (error) {
@@ -662,10 +688,17 @@ export const messageHandler = {
                     throw error;
                 }
             } finally {
-                // 清理所有定时器
-                if (outputTimerId) {
-                    clearInterval(outputTimerId);
-                    outputTimerId = null;
+                // 清理定时器
+                if (outputIntervalId) {
+                    clearInterval(outputIntervalId);
+                    outputIntervalId = null;
+                }
+                
+                // 清理健康检查定时器
+                if (healthCheckIntervalId) {
+                    clearInterval(healthCheckIntervalId);
+                    healthCheckIntervalId = null;
+                    console.log('已清理健康检查定时器');
                 }
                 
                 // 如果处理被中断，告诉调用者
@@ -675,17 +708,39 @@ export const messageHandler = {
                     return;
                 }
                 
-                // 确保缓冲区中的任何剩余字符都被添加到输出中
-                if (charBuffer.length > 0) {
-                    console.log(`在finally块中处理剩余的 ${charBuffer.length} 个字符`);
-                    full_content += charBuffer.join('');
-                    totalCharsOutput += charBuffer.length;
-                    charBuffer = [];
+                // 处理重连通知消息
+                const reconnectingMessage = '*[正在尝试恢复连接...]*';
+                const networkUnstableMessage = '*[网络连接不稳定，正在尝试恢复...]*';
+                
+                // 如果在处理完成后内容中还有临时状态消息，移除它们
+                let finalContent = full_content;
+                if (finalContent.includes(reconnectingMessage)) {
+                    finalContent = finalContent.replace(reconnectingMessage, '');
+                }
+                if (finalContent.includes(networkUnstableMessage)) {
+                    finalContent = finalContent.replace(networkUnstableMessage, '');
+                }
+                
+                // 确保所有待处理字符都被添加到输出中
+                if (pendingChars.length > 0) {
+                    // 从待处理字符中移除状态消息
+                    let remainingChars = pendingChars;
+                    if (remainingChars.includes(reconnectingMessage)) {
+                        remainingChars = remainingChars.replace(reconnectingMessage, '');
+                    }
+                    if (remainingChars.includes(networkUnstableMessage)) {
+                        remainingChars = remainingChars.replace(networkUnstableMessage, '');
+                    }
+                    
+                    console.log(`在finally块中处理剩余的 ${remainingChars.length} 个字符`);
+                    finalContent += remainingChars;
+                    totalCharsOutput += remainingChars.length;
+                    pendingChars = '';
                 }
                 
                 // 更新最终内容
-                if (full_content) {
-                    immediateFullUpdate(full_content, full_reasonResponse);
+                if (finalContent) {
+                    immediateFullUpdate(finalContent, full_reasonResponse);
                 }
                 
                 console.log(`流处理完成: 共收到 ${totalCharsReceived} 个字符，输出 ${totalCharsOutput} 个字符`);
@@ -880,12 +935,16 @@ export const messageHandler = {
         } = apiOptions;
         
         // 提取认证信息
-        const { apiKey, apiEndpoint } = authOptions;
+        const { apiKey, apiEndpoint: rawApiEndpoint } = authOptions;
+        
+        // 使用normalizeChatCompletionsUrl规范化API端点
+        const apiEndpoint = rawApiEndpoint ? normalizeChatCompletionsUrl(rawApiEndpoint) : '';
         
         // 添加日志，检查传入的API设置
         console.log('===== API请求设置开始 =====');
         console.log('传入的自定义API Key:', apiKey ? '已设置 (长度: ' + apiKey.length + ')' : '未设置');
-        console.log('传入的自定义API端点:', apiEndpoint || '未设置');
+        console.log('传入的自定义API端点:', rawApiEndpoint || '未设置');
+        console.log('规范化后的API端点:', apiEndpoint || '未设置');
         console.log('使用的模型:', model);
         
         // 关键修改：优先使用前端API设置的逻辑
@@ -940,19 +999,74 @@ export const messageHandler = {
                 
                 const headers = {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`
+                    'Authorization': `Bearer ${apiKey}`,
+                    ...(stream && { 'Accept': 'text/event-stream' })
                 };
                 
                 console.log('准备直接发送API请求到:', apiEndpoint);
-                const response = await fetch(apiEndpoint, {
-                    method: 'POST',
-                    headers: headers,
-                    body: JSON.stringify(payload),
-                    signal
-                });
+                
+                // 添加重试逻辑，处理429错误
+                let response;
+                let retryCount = 0;
+                const maxRetries = 3; // 最大重试次数
+                let retryDelay = 2000; // 初始重试延迟（毫秒）
+                
+                while (retryCount <= maxRetries) {
+                    try {
+                        response = await fetch(apiEndpoint, {
+                            method: 'POST',
+                            headers: headers,
+                            body: JSON.stringify(payload),
+                            signal
+                        });
+                        
+                        // 如果不是429错误或已达到最大重试次数，跳出循环
+                        if (response.status !== 429 || retryCount === maxRetries) {
+                            break;
+                        }
+                        
+                        // 如果是429错误并且还可以重试
+                        if (response.status === 429) {
+                            retryCount++;
+                            console.log(`收到429错误，正在进行第${retryCount}次重试，等待${retryDelay / 1000}秒...`);
+                            
+                            // 使用onUpdate回调通知用户
+                            if (onUpdate && typeof onUpdate === 'function') {
+                                onUpdate({
+                                    content: `API请求被限流，正在进行第${retryCount}次重试，等待${retryDelay / 1000}秒...`
+                                }, false);
+                            }
+                            
+                            // 等待延迟时间
+                            await new Promise(resolve => setTimeout(resolve, retryDelay));
+                            
+                            // 指数退避算法，增加下次重试的延迟时间
+                            retryDelay *= 2;
+                        }
+                    } catch (error) {
+                        // 如果是因为用户取消而失败，直接抛出错误
+                        if (error.name === 'AbortError') {
+                            throw error;
+                        }
+                        
+                        // 其他错误，如果还可以重试，则继续重试
+                        if (retryCount < maxRetries) {
+                            retryCount++;
+                            console.log(`请求失败，正在进行第${retryCount}次重试，等待${retryDelay / 1000}秒...`, error);
+                            await new Promise(resolve => setTimeout(resolve, retryDelay));
+                            retryDelay *= 2;
+                        } else {
+                            throw error;
+                        }
+                    }
+                }
                 
                 if (!response.ok) {
-                    throw new Error(`直接API请求失败: ${response.status} ${response.statusText}`);
+                    if (response.status === 429) {
+                        throw new Error(`API请求被限流(429)，已尝试${retryCount}次重试但仍然失败。请稍后再试。`);
+                    } else {
+                        throw new Error(`直接API请求失败: ${response.status} ${response.statusText}`);
+                    }
                 }
                 
                 // 处理流式响应
@@ -999,7 +1113,8 @@ export const messageHandler = {
             const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    ...(stream && { 'Accept': 'text/event-stream' })
                 },
                 body: JSON.stringify(payload),
                 signal

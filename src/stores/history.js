@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { useChatStore } from './chat'
+import { useSettingsStore } from './settings'
 
 export const useHistoryStore = defineStore('history', {
     state: () => ({
@@ -110,6 +111,7 @@ export const useHistoryStore = defineStore('history', {
          */
         saveCurrentAsHistory(title) {
             const chatStore = useChatStore()
+            const settingsStore = useSettingsStore()
             
             // Skip if there are no messages
             if (chatStore.messages.length === 0) {
@@ -122,13 +124,31 @@ export const useHistoryStore = defineStore('history', {
             // Create a deep copy of the messages to prevent reference issues
             const messagesCopy = JSON.parse(JSON.stringify(chatStore.messages))
             
+            // 保存当前角色设定（如果有）
+            const roleData = settingsStore.currentRole ? {
+                id: settingsStore.currentRole.id,
+                name: settingsStore.currentRole.name,
+                description: settingsStore.currentRole.description,
+                prompt: settingsStore.currentRole.prompt,
+                color: settingsStore.currentRole.color,
+                isUserCreated: settingsStore.currentRole.isUserCreated
+            } : null
+            
             // Create the new record
             const newRecord = {
                 id: recordId,
                 title: title || this.generateTitleFromMessages(chatStore.messages),
                 messages: messagesCopy,
                 timestamp: new Date().toISOString(),
-                tokenCount: { ...chatStore.tokenCount }
+                tokenCount: { ...chatStore.tokenCount },
+                roleData: roleData, // 添加角色设定数据
+                modelInfo: { // 添加模型信息
+                    model: settingsStore.model,
+                    temperature: settingsStore.temperature,
+                    maxTokens: settingsStore.maxTokens,
+                    topP: settingsStore.topP,
+                    topK: settingsStore.topK
+                }
             }
             
             // Add the record to the history
@@ -148,7 +168,24 @@ export const useHistoryStore = defineStore('history', {
             }
 
             const chatStore = useChatStore();
+            const settingsStore = useSettingsStore();
             console.log('[HistoryStore] Switching from', this.activeRecordId, 'to', id);
+
+            // 在切换前保存当前的系统角色设定和模型设置（如果是当前会话）
+            if (this.activeRecordId === 'current' && chatStore.messages.length > 0) {
+                // 保存当前会话的系统角色到 localStorage
+                localStorage.setItem('currentChatRole', settingsStore.currentRole ? 
+                    JSON.stringify(settingsStore.currentRole) : '');
+                
+                // 保存当前模型设置到 localStorage
+                localStorage.setItem('currentChatModel', JSON.stringify({
+                    model: settingsStore.model,
+                    temperature: settingsStore.temperature,
+                    maxTokens: settingsStore.maxTokens,
+                    topP: settingsStore.topP,
+                    topK: settingsStore.topK
+                }));
+            }
 
             // Scenario 1: Switching TO a history record (from 'current' or another history record)
             if (id !== 'current') {
@@ -169,6 +206,43 @@ export const useHistoryStore = defineStore('history', {
                     // Load the history record's messages into the chat store with a deep copy
                     console.log('[HistoryStore] Loading history record:', record.title);
                     chatStore.setMessages(JSON.parse(JSON.stringify(record.messages)));
+                    
+                    // 加载此记录特有的角色设定（如果有）
+                    if (record.roleData) {
+                        console.log('[HistoryStore] Restoring role setting for this chat:', record.roleData.name);
+                        
+                        // 检查是否是自定义角色，如果是，需要查找或创建
+                        if (record.roleData.isUserCreated) {
+                            // 先检查当前自定义角色列表中是否有相同的角色
+                            const existingRole = settingsStore.customRoles.find(r => r.id === record.roleData.id);
+                            if (existingRole) {
+                                // 如果找到了相同的角色，直接使用
+                                settingsStore.currentRole = existingRole;
+                            } else {
+                                // 如果没有找到，则将记录的角色添加到自定义角色列表中并使用
+                                const newRole = settingsStore.addCustomRole(record.roleData);
+                                settingsStore.currentRole = newRole;
+                            }
+                        } else {
+                            // 对于非自定义角色，直接设置
+                            settingsStore.currentRole = record.roleData;
+                        }
+                    } else {
+                        // 此记录没有角色设定，清除当前角色
+                        console.log('[HistoryStore] No role setting for this chat, clearing current role');
+                        settingsStore.currentRole = null;
+                    }
+                    
+                    // 加载此记录的模型信息（如果有）
+                    if (record.modelInfo) {
+                        console.log('[HistoryStore] Restoring model settings for this chat:', record.modelInfo.model);
+                        settingsStore.model = record.modelInfo.model;
+                        settingsStore.temperature = record.modelInfo.temperature;
+                        settingsStore.maxTokens = record.modelInfo.maxTokens;
+                        settingsStore.topP = record.modelInfo.topP;
+                        settingsStore.topK = record.modelInfo.topK;
+                    }
+                    
                     return true;
                 }
                 console.log('[HistoryStore] Record not found:', id);
@@ -189,18 +263,65 @@ export const useHistoryStore = defineStore('history', {
                         if (savedMessages && savedMessages.length > 0) {
                             console.log('[HistoryStore] Loading saved current session from localStorage');
                             chatStore.setMessages(JSON.parse(JSON.stringify(savedMessages)));
+                            
+                            // 恢复当前会话的系统角色
+                            const savedRole = localStorage.getItem('currentChatRole');
+                            if (savedRole) {
+                                try {
+                                    const roleData = JSON.parse(savedRole);
+                                    console.log('[HistoryStore] Restoring role for current session:', roleData.name);
+                                    
+                                    // 检查是否是自定义角色
+                                    if (roleData.isUserCreated) {
+                                        const existingRole = settingsStore.customRoles.find(r => r.id === roleData.id);
+                                        if (existingRole) {
+                                            settingsStore.currentRole = existingRole;
+                                        } else {
+                                            const newRole = settingsStore.addCustomRole(roleData);
+                                            settingsStore.currentRole = newRole;
+                                        }
+                                    } else {
+                                        settingsStore.currentRole = roleData;
+                                    }
+                                } catch (roleError) {
+                                    console.error('[HistoryStore] Failed to restore role:', roleError);
+                                    settingsStore.currentRole = null;
+                                }
+                            } else {
+                                // 没有保存的角色，清除当前角色
+                                settingsStore.currentRole = null;
+                            }
+                            
+                            // 恢复当前会话的模型设置
+                            const savedModel = localStorage.getItem('currentChatModel');
+                            if (savedModel) {
+                                try {
+                                    const modelInfo = JSON.parse(savedModel);
+                                    console.log('[HistoryStore] Restoring model settings for current session:', modelInfo.model);
+                                    settingsStore.model = modelInfo.model;
+                                    settingsStore.temperature = modelInfo.temperature;
+                                    settingsStore.maxTokens = modelInfo.maxTokens;
+                                    settingsStore.topP = modelInfo.topP;
+                                    settingsStore.topK = modelInfo.topK;
+                                } catch (modelError) {
+                                    console.error('[HistoryStore] Failed to restore model settings:', modelError);
+                                }
+                            }
                         } else {
                             console.log('[HistoryStore] Saved current session is empty, clearing messages');
                             chatStore.clearMessages();
+                            settingsStore.currentRole = null; // 清除角色设定
                         }
                     } catch (e) {
                         console.error('[HistoryStore] Failed to load current chat from localStorage:', e);
                         chatStore.clearMessages(); // Clear on error
+                        settingsStore.currentRole = null; // 清除角色设定
                     }
                 } else {
                     // No saved current chat, so clear messages for a fresh start
                     console.log('[HistoryStore] No saved current session, clearing messages');
                     chatStore.clearMessages();
+                    settingsStore.currentRole = null; // 清除角色设定
                 }
                 return true;
             }

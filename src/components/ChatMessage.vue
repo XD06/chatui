@@ -5,11 +5,11 @@
       'message-container',
       `role-${message.role}`,
       { 'regenerating': message.loading },
-      { 'latest-message': isLatestMessage && message.role === 'assistant' },
+      { 'latest-message': props.isLatestMessage && message.role === 'assistant' },
       { 'completed': isMessageComplete },
-      { 'history-message': !isLatestMessage || isMessageComplete }
+      { 'history-message': !props.isLatestMessage || isMessageComplete }
     ]"
-    :data-message-status="isLatestMessage && !isMessageComplete ? 'generating' : 'completed'"
+    :data-message-status="props.isLatestMessage && !isMessageComplete ? 'generating' : 'completed'"
   >
     <!-- AI头像（只在AI消息时显示在左侧） -->
     <div v-if="message.role === 'assistant'" class="avatar assistant-avatar">
@@ -29,7 +29,7 @@
 
       <!-- 思考内容区域 (只在AI消息且存在思考内容时显示) -->
       <div 
-        v-if="message.role === 'assistant' && message.thinkingContent" 
+        v-if="message.role === 'assistant' && message.reasoningContent" 
         class="thinking-bubble"
         :class="{ 'thinking-active': !message.completed }"
       >
@@ -67,6 +67,7 @@
 
       <!-- 消息气泡 -->
       <div class="message-bubble">
+        
         <div v-if="message.loading" class="message-loading">
           <div class="loading-circle"></div>
           <span class="loading-text">AI思考中
@@ -102,7 +103,17 @@
               >Cancel</el-button>
             </div>
           </div>
-          <div v-else class="message-display" v-html="formatContent"></div>
+          <div v-else>
+            <!-- Message content rendered with v-html -->
+            <div class="message-display" v-html="formatContent"></div>
+            
+            <!-- Only show for AI messages that are the latest and not complete -->
+            <div v-if="message.role === 'assistant' && props.isLatestMessage && !isMessageComplete" class="typing-indicator">
+              <div class="dot"></div>
+              <div class="dot"></div>
+              <div class="dot"></div>
+            </div>
+          </div>
         </div>
         
         <!-- 消息统计信息 -->
@@ -113,58 +124,85 @@
         </div>
       </div>
 
-      <!-- 消息底部工具栏 -->
+      <!-- 消息底部工具栏 - 直接显示按钮 -->
       <div class="message-actions">
-        <!-- 用户消息的操作 -->
+        <!-- 用户消息的操作按钮 -->
         <template v-if="message.role === 'user'">
-          <el-dropdown trigger="click" @command="handleUserCommand">
-            <el-button class="action-button" size="small" type="link">
-              <el-icon><MoreFilled /></el-icon>
+          <!-- 桌面端操作按钮 - 与移动端一致 -->
+          <div class="desktop-actions">
+            <div class="action-buttons-container">
+              <el-button class="action-btn" @click="handleCopy" type="text" size="small">
+                <el-icon><CopyDocument /></el-icon>
+              </el-button>
+              <el-button class="action-btn" @click="handleDelete" type="text" size="small">
+                <el-icon><Delete /></el-icon>
+              </el-button>
+              <el-button class="action-btn" @click="startEdit" type="text" size="small">
+                <el-icon><EditPen /></el-icon>
+              </el-button>
+            </div>
+          </div>
+          
+          <!-- Mobile version with direct buttons (will only show on mobile) - icons only -->
+          <div class="mobile-actions">
+            <el-button class="mobile-action-btn" @click="handleCopy" type="text" size="small">
+              <el-icon><CopyDocument /></el-icon>
             </el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="edit">
-                  <el-icon><EditPen /></el-icon> Edit
-                </el-dropdown-item>
-                <el-dropdown-item command="delete">
-                  <el-icon><Delete /></el-icon> Delete
-                </el-dropdown-item>
-                <el-dropdown-item command="copy">
-                  <el-icon><CopyDocument /></el-icon> Copy
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+            <el-button class="mobile-action-btn" @click="handleDelete" type="text" size="small">
+              <el-icon><Delete /></el-icon>
+            </el-button>
+            <el-button class="mobile-action-btn" @click="startEdit" type="text" size="small">
+              <el-icon><EditPen /></el-icon>
+            </el-button>
+          </div>
         </template>
         
-        <!-- AI消息的操作 -->
+        <!-- AI消息的操作按钮 -->
         <template v-else>
-          <el-dropdown trigger="click" @command="handleAssistantCommand" style="border: none;">
-            <el-button class="action-button" size="small" type="link">
-              <el-icon><MoreFilled /></el-icon>
+          <!-- 桌面端操作按钮 - 与移动端一致 -->
+          <div class="desktop-actions">
+            <div class="action-buttons-container">
+              <el-button class="action-btn" @click="handleCopy" type="text" size="small">
+                <el-icon><CopyDocument /></el-icon>
+              </el-button>
+              
+              <el-button v-if="props.isLatestMessage" class="action-btn" @click="handleRegenerate" type="text" size="small">
+                <el-icon><Refresh /></el-icon>
+              </el-button>
+              
+              <el-button class="action-btn" @click="handleDelete" type="text" size="small">
+                <el-icon><Delete /></el-icon>
+              </el-button>
+            </div>
+          </div>
+          
+          <!-- Mobile version with direct buttons (will only show on mobile) - icons only -->
+          <div class="mobile-actions">
+            <el-button class="mobile-action-btn" @click="handleCopy" type="text" size="small">
+              <el-icon><CopyDocument /></el-icon>
             </el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item v-if="isLatestMessage" command="regenerate">
-                  <el-icon><Refresh /></el-icon> Regenerate
-                </el-dropdown-item>
-                <el-dropdown-item command="copy">
-                  <el-icon><CopyDocument /></el-icon> Copy
-                </el-dropdown-item>
-                <el-dropdown-item command="delete">
-                  <el-icon><Delete /></el-icon> Delete
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+            <el-button v-if="props.isLatestMessage" class="mobile-action-btn" @click="handleRegenerate" type="text" size="small">
+              <el-icon><Refresh /></el-icon>
+            </el-button>
+            <el-button class="mobile-action-btn" @click="handleDelete" type="text" size="small">
+              <el-icon><Delete /></el-icon>
+            </el-button>
+          </div>
         </template>
       </div>
+      
+      <!-- 建议问题显示区域（仅在最新的AI消息完全加载完成后显示） -->
+      <SuggestedQuestions
+        v-if="message.role === 'assistant' && messageCompleted && props.isLatestMessage && message.suggestedQuestions && message.suggestedQuestions.length"
+        :questions="message.suggestedQuestions"
+        @select="handleQuestionSelect"
+        class="suggested-questions-inside"
+      />
     </div>
     
-    <!-- 用户头像（只在用户消息时显示在右侧） -->
+    <!-- 用户头像（及欧兰色渐变气泡） -->
     <div v-if="message.role === 'user'" class="avatar user-avatar">
-      <!-- <span class="avatar-letter">U</span> -->
-      <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADIAAAAyCAYAAAAeP4ixAAAACXBIWXMAAAsTAAALEwEAmpwYAAADqklEQVR4nO2ae2iOURzHPxujbbLMZSu2xCiXf8wlmekxk+uSFqXc8gc2aRGmtWSb6yI0/0gplIiUWPGnQsQ/5JoihVLkkkth0anvU8fbe3ne7X2e95Jvnd7nnOc5v/N+n+ec3/me3znwH56RrZTWqADuKpnrtEMJcAboAk4rdanM3Et55AKNwBfgHjDdujcJuAl8A/YB/UhR1AAvgLfA2gjjIgtYArwCXgMrVZYSmABcB34CR4D+HurkAzuBH8AdYCpJxED98d/AZWBkN2yY8XJK48f8FhEgcoAG4BPwBJibAJszgfvAV32pvgSAZ8B7oB7onUC7xla9bJs2fMcf4BxQ5wOROtk2bfgO04gDjAYOAgsSYHMWcAgYL9uBETkLjFJ+oQi5+XgwSnWNDReBEpmt/twCFMgB2Hkv7ncLsD3MwHaC7lquC94BbAB6hcmHwkySy4H2KK7WSQYRe1I8DMyIkDeYonkn1uTnJJMIkhpL9bZLQ/LtuvYiR5xkE7GF41aJxzxNdiaFYnAE9+2kChFbfuxXFzPjYjHQLIfQorG0Ih2IuDAKd5fGTR/+RRtpRMSJ8nzGEFkPDM0EImOAZUETyQE2q5HaBBEx7rg1pKzWTyLzgafAB83a67RuKOwhESwixlYH8AvoxAd0yvjRkD9eKDe6Loacj0WkXm7ZvCTzsubhE8xnvgZUR7g/ThK8uhtEjPh8CHwENqn7+j64FwEHoqzNNwIngTIPRMr07CfZb44gMn3zUjlaxbWGiZY4esPu/YIwRGz5PkfPu+v/xyoL1N0WA3uAVVb8aiLQpLx7f7WltVarrFjPNKmOa++EoinngeFBEbGjh0aaTwvJV1j5C0rmGt07YuVD7d1QvKtNXzAQInaUscN6k3be7VpmBt8roRhLztcAL4E3UaKWvhBBkr1REj5X+W0KvJ3StSnzijy59+/ALZIgSUpDFlLDlOJFlmxcStRM/0P91sjweFCpsVDejTbLVbcykdprBHBRHuU4MCSOuqZvr9F6xEtctwjYrTrZfonInsRno4V/iBFOcvwQkdla8b0DnmuvIx6UaS6x61WrG42NUMdXWT9AjRsxeVXringwR/rskIfZ3AlioWXiv1dE6BgwKI66sVRx4CtGt3s8khRv8BilT0kiKEJiBvRn4AFQRc+JVMmWEZUpuyUXjUhJMrfk4t0kDUckP5U2Sb1uW9tEUnrbOtZBApfI5HQ5SBDpaMdtpbQ62pFxh20y7vgTicZfAdfx5+t2wbAAAAAASUVORK5CYII=" alt="user">
+      <div class="gradient-avatar"></div>
     </div>
   </div>
 </template>
@@ -172,6 +210,7 @@
 import { ref, computed, getCurrentInstance, onMounted, nextTick, watch, onUnmounted, onUpdated } from 'vue'
 import { useChatStore } from '../stores/chat'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import SuggestedQuestions from './SuggestedQuestions.vue'
 import { 
   ChatDotRound, 
   MoreFilled, 
@@ -197,10 +236,14 @@ const props = defineProps({
   isLatestMessage: {
     type: Boolean,
     default: false
+  },
+  messageStreamFinished: {
+    type: Boolean,
+    default: false
   }
 })
 
-const emit = defineEmits(['update', 'delete', 'regenerate'])
+const emit = defineEmits(['update', 'delete', 'regenerate', 'questionSelected', 'messageRenderComplete'])
 
 const messageText = ref(null)
 const isThinkingExpanded = ref(false)
@@ -368,28 +411,34 @@ const handleCopy = async () => {
   }
 }
 
-// 监听消息完成状态
-watch(() => props.message.completed, (newVal, oldVal) => {
-  // Only trigger if the message is newly marked as completed
-  if (newVal && !oldVal) {
-    console.log(`ChatMessage ${props.message.id}: Received completed=true signal.`);
-    messageCompleted.value = true; // Update local completion state
-        
-    // Force rendering of all dynamic content now that the message is fully received.
-    // Using nextTick to ensure the DOM has settled with the final content.
+// 处理重新生成
+const handleRegenerate = () => {
+  console.log('[DEBUG] 发出重新生成事件，消息:', props.message);
+  emit('regenerate', props.message);
+}
+
+// 处理建议问题选择
+const handleQuestionSelect = (question) => {
+  // 将选中的问题发送给父组件，由父组件转发给聊天输入框
+  console.log('[DEBUG] 选择了建议问题:', question);
+  emit('questionSelected', question);
+}
+
+// 优化建议问题的显示时机：只在消息完全接收后延迟5秒显示
+watch([
+  () => props.message.completed,
+  () => props.messageStreamFinished
+], ([completed, streamFinished]) => {
+  if (completed && streamFinished) {
     nextTick(() => {
-      console.log(`ChatMessage ${props.message.id}: Forcing final render of dynamic content.`);
-      // Ensure code blocks are highlighted and interactive
-      setupCodeBlockInteractions(); 
-      // Ensure any pending markdown code blocks are processed
-      processPendingCodeBlocks();
-      // Force Mermaid diagrams to render, bypassing user typing checks
-      if (window.renderMermaidDiagrams) {
-        window.renderMermaidDiagrams(true); 
-      }
+      setTimeout(() => {
+        messageCompleted.value = false;
+      }, 5000);
     });
+  } else {
+    messageCompleted.value = false;
   }
-}, { immediate: false }); // immediate: false to only react to changes
+});
 
 // 修改updateContentDisplay函数，移除动画效果
 const updateContentDisplay = (content) => {
@@ -399,7 +448,7 @@ const updateContentDisplay = (content) => {
   if (props.message.role !== 'assistant') {
     // 用户消息不需要Markdown渲染，直接显示纯文本
     messageContent.value = `<div class="user-message-text">${content.replace(/\n/g, '<br>')}</div>`;
-    messageCompleted.value = true;
+    messageCompleted.value = false;
     return;
   }
   
@@ -435,7 +484,7 @@ const updateContentDisplay = (content) => {
     
     // 只有完全完成的消息才标记为已完成
     if (isComplete) {
-      messageCompleted.value = true;
+      messageCompleted.value = false;
     }
   }
 };
@@ -455,8 +504,8 @@ const formatContent = computed(() => {
 
 // 格式化思考内容
 const formatThinkingContent = computed(() => {
-  if (!props.message.thinkingContent) return '';
-  return renderMarkdown(props.message.thinkingContent);
+  if (!props.message.reasoningContent) return '';
+  return renderMarkdown(props.message.reasoningContent);
 })
 
 // 格式化时间
@@ -630,7 +679,7 @@ watch(() => formatContent.value, () => {
 watch(() => props.message.completed, (isCompleted) => {
   if (isCompleted) {
     // 消息完成后，标记为已完成状态，停止所有动画
-    messageCompleted.value = true;
+    messageCompleted.value = false;
   }
 });
 
@@ -819,7 +868,7 @@ onUnmounted(() => {
 .thinking-bubble {
   padding: 10px 14px;
   border-radius: 12px;
-  background-color: rgba(66, 133, 244, 0.05);
+  background-color: rgb(148 152 158 / 5%);
   margin-bottom: 10px;
   font-size: 0.85rem;
   color: #444;
@@ -832,11 +881,11 @@ onUnmounted(() => {
     animation: pulseThinking 1.5s infinite alternate;
   }
   
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    background-color: rgba(66, 133, 244, 0.08);
-  }
+  // &:hover {
+  //   transform: translateY(-2px);
+  //   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  //   background-color: rgba(54, 55, 56, 0.08);
+  // }
 
   [data-theme="dark"] & {
     background-color: rgba(92, 157, 255, 0.08);
@@ -909,7 +958,7 @@ onUnmounted(() => {
     border-top: 1px dashed rgba(66, 133, 244, 0.2);
     white-space: pre-wrap;
     word-break: break-all;
-    max-height: 150px;
+    //max-height: 150px;
     overflow-y: auto;
     font-size: 0.8rem;
     line-height: 1.6;

@@ -1,0 +1,19 @@
+/* 全局按钮显示控制 */
+
+/* 在默认/桌面视图下，只显示桌面操作按钮 */
+.desktop-actions {
+  display: block !important;
+}
+.mobile-actions {
+  display: none !important;
+}
+
+/* 在移动端视图下，只显示移动操作按钮 */
+@media screen and (max-width: 768px) {
+  .desktop-actions {
+    display: none !important;
+  }
+  .mobile-actions {
+    display: flex !important;
+  }
+}

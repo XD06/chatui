@@ -265,9 +265,12 @@
                         :key="message.id" 
                         :message="message"
                         :is-latest-message="isLatestAIMessage(message)"
+                        :message-stream-finished="message.messageStreamFinished"
                         @update="handleMessageUpdate" 
                         @delete="handleMessageDelete" 
                         @regenerate="handleRegenerate" 
+                        @questionSelected="handleQuestionSelected"
+                        @messageRenderComplete="handleMessageRenderComplete"
                     />
                 </template>
                 <div v-else class="empty-state">
@@ -565,6 +568,9 @@ const chatStore = useChatStore()
 const settingsStore = useSettingsStore()
 const historyStore = useHistoryStore()
 
+// 组件引用
+const chatInputRef = ref(null)
+
 // 移动端检测 - 改进检测方法
 const isMobileView = ref(window.innerWidth <= 768)
 const isMobileSidebarOpen = ref(false)
@@ -745,10 +751,28 @@ const currentSessionTitle = ref('新对话'); // For SIDEBAR "Current Chat" ITEM
 // 用于中断请求的控制器 - 确保它在全局作用域中定义
 const activeController = ref(null);
 
-// 保存聊天历史到localStorage
-// const saveChatHistory = () => {
-//   localStorage.setItem('chatHistory', JSON.stringify(chatHistory.value))
-// }
+// 处理建议问题选择
+const handleQuestionSelected = (question) => {
+  console.log('[ChatView] 处理建议问题选择:', question);
+  if (!question) return;
+  
+  // 直接发送这个问题
+  handleSend(question);
+}
+
+// 处理消息渲染完成事件
+const handleMessageRenderComplete = (message) => {
+  console.log(`[ChatView] 收到消息渲染完成事件，消息ID: ${message.id}`);
+  
+  // 确保这是AI消息且消息已完成
+  if (message.role === 'assistant' && message.completed) {
+    // 使用延迟确保在渲染完成后再生成建议问题
+    setTimeout(() => {
+      console.log(`[ChatView] 开始为消息ID ${message.id} 生成建议问题`);
+      generateSuggestedQuestions(message);
+    }, 5000); // 延迟短一点，因为消息已经确认渲染完成
+  }
+}
 
 // 发送消息方法
 const handleSend = async (content) => {
@@ -809,7 +833,7 @@ const handleSend = async (content) => {
       id: Date.now() + Math.floor(Math.random() * 1000), // 使用时间戳+随机数确保唯一性
       role: 'assistant',
       content: '',
-      thinkingContent: '', // Ensure this property is initialized
+      reasoningContent: '', // Ensure this property is initialized
       timestamp: new Date().toISOString(),
       startTimestamp: Date.now(), // 记录开始时间戳
       firstResponseTime: null, // 首次数据包接收时间，用于计算网络请求延迟（从发送到首包）
@@ -883,12 +907,12 @@ const handleSend = async (content) => {
             if (updatedContent.content !== undefined) {
               lastMessage.content = updatedContent.content;
             }
-            if (updatedContent.thinkingContent !== undefined) {
-              // Ensure thinkingContent property exists and is updated
-              if (!lastMessage.thinkingContent) {
-                lastMessage.thinkingContent = '';
+            if (updatedContent.reasoningContent !== undefined) {
+              // Ensure reasoningContent property exists and is updated
+              if (!lastMessage.reasoningContent) {
+                lastMessage.reasoningContent = '';
               }
-              lastMessage.thinkingContent = updatedContent.thinkingContent;
+              lastMessage.reasoningContent = updatedContent.reasoningContent;
             }
           } else if (updatedContent && updatedContent.length > 0) {
             lastMessage.content = updatedContent;
@@ -906,6 +930,7 @@ const handleSend = async (content) => {
           const lastMessage = chatStore.messages[chatStore.messages.length - 1];
           if (lastMessage && lastMessage.role === 'assistant') {
             lastMessage.completed = true;
+            lastMessage.messageStreamFinished = true; // 标记流式输出已完成
             
             // 计算响应时间
             if (lastMessage.startTimestamp) {
@@ -922,7 +947,8 @@ const handleSend = async (content) => {
             // 更新全局token计数
             chatStore.updateTokenCount(promptTokens, completionTokens);
             
-            saveMessages();
+            // 生成相关建议问题
+            generateSuggestedQuestions(lastMessage);
             
             console.log(`[ChatView] 消息发送完成，Prompt Tokens: ${promptTokens}, Completion Tokens: ${completionTokens}, 总计: ${promptTokens + completionTokens}, 响应时间: ${lastMessage.responseTime}ms`);
           }
@@ -1169,7 +1195,7 @@ const scrollToBottom = (forceScroll = false) => {
   if (messagesContainer.value) {
     const { scrollHeight, scrollTop, clientHeight } = messagesContainer.value;
     // 定义一个阈值（像素），用于判断用户是否接近底部
-    const SCROLL_THRESHOLD = 250; // 增加到250px，使得滚动跟随范围更大
+    const SCROLL_THRESHOLD = 100; // 增加到250px，使得滚动跟随范围更大
     // 检查用户是否在阈值范围内，或者是否强制滚动
     const isUserNearBottom = scrollHeight - scrollTop - clientHeight < SCROLL_THRESHOLD;
 
@@ -1238,7 +1264,19 @@ const prepareMessagesForAPI = () => {
 
 // 清除当前角色
 const clearCurrentRole = () => {
+  // 清除settings store中的角色设置
   settingsStore.currentRole = null;
+  
+  // 如果是历史记录，也需要更新历史记录中的角色数据
+  if (historyStore.activeId !== 'current') {
+    // 从历史记录中清除角色定义
+    historyStore.updateRecord(historyStore.activeId, { roleData: null });
+    console.log('[ChatView] 已从历史记录中清除角色定义');
+  } else {
+    // 清除当前会话的角色存储
+    localStorage.removeItem('currentChatRole');
+  }
+  
   ElMessage.success('已清除当前角色设置');
 }
 
@@ -1498,6 +1536,170 @@ const getRandomColor = (id) => {
     return colors[index];
 }
 
+// 已移除重复函数
+
+// 智能生成建议问题函数
+const generateSuggestedQuestions = (message) => {
+    console.log('[ChatView] 尝试生成建议问题');
+    
+    // 确保消息不为空且已完成
+    if (!message || !message.content || !message.completed) {
+        console.log('[ChatView] 消息未完成或内容为空，不生成建议问题');
+        return;
+    }
+    
+    const content = message.content;
+    // 如果内容过短，不生成建议问题
+    if (content.length < 50) {
+        console.log('[ChatView] 消息内容过短，不生成建议问题');
+        return;
+    }
+    
+    // 在消息完成后增加延迟，确保流式输出完全结束
+    console.log('[ChatView] 等待消息真正完成流式输出后再生成建议问题');
+    
+    // 清除之前的建议问题，防止在延迟期间显示
+    message.suggestedQuestions = null;
+    
+    // 设置足够的延迟时间，确保在消息完全加载后再显示建议问题
+    setTimeout(() => {
+        console.log('[ChatView] 开始为已完成的消息生成建议问题');
+        
+        // 分析消息内容，提取关键主题
+        const keywords = extractKeywords(content);
+        console.log('[ChatView] 提取的关键词:', keywords);
+        
+        // 初始化问题数组
+        let questions = [];
+        
+        // 如果提取的关键词太少，使用默认问题
+        if (keywords.length < 2) {
+            questions = [
+                '能详细解释这个解决方案吗？',
+                '有没有实际的应用案例？',
+                '这种方法的优缺点是什么？'
+            ];
+        } else {
+            // 添加深入探讨类问题
+            if (keywords.length >= 1) {
+                questions.push(`关于${keywords[0]}的深入原理是什么？`);
+            }
+            
+            // 添加应用案例类问题
+            if (keywords.length >= 2) {
+                questions.push(`${keywords[1]}在实际项目中如何应用？`);
+            }
+            
+            // 添加比较分析类问题
+            if (keywords.length >= 2) {
+                questions.push(`${keywords[0]}和${keywords[1]}有什么区别和联系？`);
+            }
+            
+            // 根据内容判断是否是技术类问题
+            if (content.includes('代码') || content.includes('编程') || content.includes('开发')) {
+                questions.push('有没有代码示例或最佳实践？');
+            }
+            
+            // 确保有足够的问题
+            if (questions.length < 3) {
+                questions.push('这种方法的优缺点是什么？');
+                questions.push('有没有替代方案？');
+            }
+        }
+        
+        // 保存建议问题
+        message.suggestedQuestions = questions;
+        console.log('[ChatView] 生成了建议问题:', questions);
+    }, 2000); // 设置更长的延迟时间(2秒)确保消息完全渲染
+}
+
+// 从内容中提取关键词
+const extractKeywords = (content) => {
+    const keywords = [];
+    
+    // 简单的关键词提取方法
+    // 1. 提取引号中的内容
+    const quotedMatches = content.match(/[""''""「」《》]([^""''""「」《》]{2,10})[""''""「」《》]/g);
+    if (quotedMatches) {
+        quotedMatches.forEach(match => {
+            const cleaned = match.replace(/[""''""「」《》]/g, '');
+            if (cleaned.length >= 2 && cleaned.length <= 10) {
+                keywords.push(cleaned);
+            }
+        });
+    }
+    
+    // 2. 尝试找出常见的术语格式
+    const termMatches = content.match(/([a-zA-Z][a-zA-Z0-9]+([\s\-][a-zA-Z0-9]+)?)/g);
+    if (termMatches) {
+        termMatches.forEach(term => {
+            if (term.length > 3 && !['this', 'that', 'these', 'those', 'when', 'what', 'where'].includes(term.toLowerCase())) {
+                keywords.push(term);
+            }
+        });
+    }
+    
+    // 3. 提取中文关键短语
+    const chineseTerms = content.match(/[\u4e00-\u9fa5]{2,6}([\u4e00-\u9fa5]{1,2})?/g);
+    if (chineseTerms) {
+        chineseTerms.forEach(term => {
+            if (term.length >= 2 && term.length <= 8 && !keywords.includes(term)) {
+                keywords.push(term);
+            }
+        });
+    }
+    
+    // 去重并限制数量
+    return [...new Set(keywords)].slice(0, 5);
+}
+
+// 从内容中提取关键主题
+const extractKeySubjects = (content) => {
+    // 实现简单的主题提取逻辑
+    const subjects = [];
+    
+    // 先尝试提取短语句或关键概念
+    const paragraphs = content.split(/\n+/);
+    for (const paragraph of paragraphs) {
+        // 对中文，一般有引号、场景或关键主题的部分
+        const quotedMatches = paragraph.match(/[\u300c\u300d\u201c\u201d《》]([^\u300c\u300d\u201c\u201d《》]{2,10})[\u300c\u300d\u201c\u201d《》]/g);
+        if (quotedMatches) {
+            quotedMatches.forEach(match => {
+                const cleanMatch = match.replace(/[\u300c\u300d\u201c\u201d《》]/g, '');
+                if (cleanMatch.length >= 2 && cleanMatch.length <= 10) {
+                    subjects.push(cleanMatch);
+                }
+            });
+        }
+        
+        // 提取以"是"、"就是"、"作为"结尾的短语
+        const endingMatches = paragraph.match(/([\u4e00-\u9fa5\w]{2,10})(是|就是|作为)([\uff0c\uff1a\uff1b\u3002]|$)/g);
+        if (endingMatches) {
+            endingMatches.forEach(match => {
+                const cleanMatch = match.replace(/(是|就是|作为)([\uff0c\uff1a\uff1b\u3002]|$)/g, '');
+                if (cleanMatch.length >= 2 && cleanMatch.length <= 10) {
+                    subjects.push(cleanMatch);
+                }
+            });
+        }
+    }
+    
+    // 如果还没有提取到足够的主题，尝试从段落首句提取
+    if (subjects.length < 3) {
+        for (const paragraph of paragraphs) {
+            if (paragraph.length > 10) {
+                const firstSentence = paragraph.split(/[\u3002\uff0c\uff1b\uff1a]/)[0];
+                if (firstSentence && firstSentence.length >= 4 && firstSentence.length <= 15) {
+                    subjects.push(firstSentence.substring(0, 10));
+                }
+            }
+        }
+    }
+    
+    // 去重
+    return [...new Set(subjects)];
+}
+
 // 处理模型变更
 const handleModelChange = (modelValue) => {
   // 设置新选择的模型
@@ -1730,12 +1932,13 @@ const handleRegenerate = async (message) => {
       id: Date.now() + Math.floor(Math.random() * 1000), // 使用时间戳+随机数确保唯一性
       role: 'assistant',
       content: '',
-      thinkingContent: '',
+      reasoningContent: '',
       timestamp: new Date().toISOString(),
       startTimestamp: Date.now(), // 记录开始时间戳
       firstResponseTime: null, // 首次数据包接收时间，用于计算网络请求延迟（从发送到首包）
       completed: false,
-      loading: true
+      loading: true,
+      messageStreamFinished: false // 新增，初始化为 false
     };
     
     // 5. 构建新的消息数组，替换旧的AI消息
@@ -1786,11 +1989,11 @@ const handleRegenerate = async (message) => {
             if (updatedContent.content !== undefined) {
             msgToUpdate.content = updatedContent.content;
             }
-            if (updatedContent.thinkingContent !== undefined) {
-            if (!msgToUpdate.thinkingContent) {
-              msgToUpdate.thinkingContent = '';
+            if (updatedContent.reasoningContent !== undefined) {
+            if (!msgToUpdate.reasoningContent) {
+              msgToUpdate.reasoningContent = '';
               }
-            msgToUpdate.thinkingContent = updatedContent.thinkingContent;
+            msgToUpdate.reasoningContent = updatedContent.reasoningContent;
             }
           } else if (updatedContent && updatedContent.length > 0) {
           msgToUpdate.content = updatedContent;
@@ -2021,8 +2224,8 @@ const selectExportFormat = (chat, format) => {
         exportContent += `\n╭── ${role} · ${time} ──\n│\n`;
 
         // 优先显示思考内容
-        if (msg.thinkingContent) {
-          exportContent += `│ 💭 思考过程:\n│ ${msg.thinkingContent.split('\n').join('\n│ ')}\n│\n`;
+        if (msg.reasoningContent) {
+          exportContent += `│ 💭 思考过程:\n│ ${msg.reasoningContent.split('\n').join('\n│ ')}\n│\n`;
         }
 
         exportContent += `│ 📝 内容:\n│ ${msg.content.split('\n').join('\n│ ')}\n╰────────────────────────────────\n`;
@@ -2256,11 +2459,11 @@ const selectExportFormat = (chat, format) => {
         <span class="timestamp">${time}</span>
       </div>`;
 
-        if (msg.thinkingContent) {
+        if (msg.reasoningContent) {
           exportContent += `
       <div class="reasoning-section">
         <h3>💭 思考过程</h3>
-        <div>${msg.thinkingContent.replace(/\n/g, '<br>')}</div>
+        <div>${msg.reasoningContent.replace(/\n/g, '<br>')}</div>
       </div>`;
         }
 
@@ -2511,11 +2714,11 @@ const selectExportFormat = (chat, format) => {
         <span class="timestamp">${time}</span>
       </div>`;
 
-        if (msg.thinkingContent) {
+        if (msg.reasoningContent) {
           exportContent += `
       <div class="reasoning-section">
         <h3>💭 思考过程</h3>
-        <div>${msg.thinkingContent.replace(/\n/g, '<br>')}</div>
+        <div>${msg.reasoningContent.replace(/\n/g, '<br>')}</div>
       </div>`;
         }
 
@@ -2565,8 +2768,8 @@ ${rolePrompt}
 
         exportContent += `## ${emoji} ${role} · *${time}*\n\n`;
 
-        if (msg.thinkingContent) {
-          exportContent += `### 💭 思考过程\n\`\`\`\n${msg.thinkingContent}\n\`\`\`\n\n`;
+        if (msg.reasoningContent) {
+          exportContent += `### 💭 思考过程\n\`\`\`\n${msg.reasoningContent}\n\`\`\`\n\n`;
         }
 
         exportContent += `### 📝 内容\n${msg.content}\n\n---\n\n`;
@@ -2591,9 +2794,9 @@ ${rolePrompt}
           id: msg.id,
           role: msg.role,
           content: msg.content,
-          thinkingContent: msg.thinkingContent || "",
+          reasoningContent: msg.reasoningContent || "",
           timestamp: msg.timestamp,
-          hasThinking: !!msg.thinkingContent
+          hasReasoning: !!msg.reasoningContent
         }))
       };
       
@@ -3145,7 +3348,7 @@ onUnmounted(() => {
             .new-chat-btn {
                 width: 100%;
                 border-radius: 8px;
-                background-color: #202123;
+                background: #202123!important;
                 border: none;
                 padding: 10px 0;
                 font-size: 14px;
@@ -3645,6 +3848,7 @@ onUnmounted(() => {
                 min-width: 36px !important; // 确保按钮不会太小
                 margin-left: 0px;
                 border: none;
+                display:none;
                 
                 // 移动端隐藏按钮文字，只显示图标
                 .button-text {
@@ -4341,14 +4545,14 @@ onUnmounted(() => {
 
 // 在适当位置添加深度思考的样式
 :deep(.chat-message) {
-    .thinking-content {
+    .reasoning-content {
         margin-top: 12px;
         padding: 12px 16px;
         background-color: #f5f5f5;
         border-radius: 8px;
         position: relative;
         
-        .thinking-header {
+        .reasoning-header {
             display: flex;
             align-items: center;
             gap: 8px;
@@ -4356,13 +4560,13 @@ onUnmounted(() => {
             font-weight: 500;
             color: #666;
             
-            .thinking-icon {
+            .reasoning-icon {
                 color: #4284f5;
              
             }
         }
         
-        .thinking-text {
+        .reasoning-text {
             font-size: 14px;
             line-height: 1.6;
             color: #666;
