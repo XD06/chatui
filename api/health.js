@@ -17,7 +17,7 @@ export default function handler(req, res) {
     // 检查API密钥是否配置
     const apiKey = process.env.API_KEY;
     const apiUrl = process.env.API_URL;
-    const accessCode = process.env.ACCESS_CODE;
+    const accessCode = process.env.WEBSITE_CODE;
     
     const apiKeyConfigured = !!apiKey;
     const apiUrlConfigured = !!apiUrl;

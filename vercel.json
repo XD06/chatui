@@ -28,6 +28,6 @@
   "env": {
     "API_KEY": "@api_key",
     "API_URL": "@api_url",
-    "ACCESS_CODE": "@access_code"
+    "WEBSITE_CODE": "@access_code"
   }
 } 
