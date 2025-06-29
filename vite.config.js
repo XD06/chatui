@@ -8,21 +8,24 @@ import viteCompression from 'vite-plugin-compression'
 
 // Load environment variables
 const isProduction = process.env.NODE_ENV === 'production'
+const isVercel = process.env.VERCEL === '1'
 
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
     vue(),
-    // 启用 Gzip 和 Brotli 压缩
-    isProduction && viteCompression({
+    // 启用 Gzip 和 Brotli 压缩，但在Vercel上禁用以加快构建
+    isProduction && !isVercel && viteCompression({
       algorithm: 'gzip',
       ext: '.gz',
       threshold: 10240, // 10KB
+      deleteOriginFile: false, // Don't delete original files
     }),
-    isProduction && viteCompression({
+    isProduction && !isVercel && viteCompression({
       algorithm: 'brotliCompress',
       ext: '.br',
       threshold: 10240,
+      deleteOriginFile: false, // Don't delete original files
     }),
     // 仅在需要时启用包分析
     process.env.ANALYZE && visualizer({
@@ -61,8 +64,9 @@ export default defineConfig({
   
   // 构建优化
   build: {
-    minify: 'terser',
-    terserOptions: {
+    // 在Vercel上使用更快的构建设置
+    minify: isVercel ? 'esbuild' : 'terser',
+    terserOptions: isVercel ? undefined : {
       compress: {
         drop_console: isProduction,
         drop_debugger: isProduction,
@@ -146,5 +150,5 @@ export default defineConfig({
   },
   
   // 确保Vercel能正确构建Vue应用
-  base: './'
+  base: '/'
 })

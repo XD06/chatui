@@ -15,15 +15,27 @@ export default function handler(req, res) {
 
   try {
     // 检查API密钥是否配置
-    const apiKeyConfigured = !!process.env.API_KEY;
-    const apiUrlConfigured = !!process.env.API_URL;
+    const apiKey = process.env.API_KEY;
+    const apiUrl = process.env.API_URL;
+    const accessCode = process.env.ACCESS_CODE;
+    
+    const apiKeyConfigured = !!apiKey;
+    const apiUrlConfigured = !!apiUrl;
+    const accessCodeConfigured = !!accessCode;
     
     console.log('【API健康检查】环境变量检查:', {
       apiKeyConfigured,
+      apiKeyLength: apiKey ? apiKey.length : 0,
       apiUrlConfigured,
+      apiUrl: apiUrl || '未设置',
+      accessCodeConfigured,
       nodeEnv: process.env.NODE_ENV,
       vercelEnv: process.env.VERCEL_ENV
     });
+
+    // 列出所有环境变量的键（不包含值，以保护敏感信息）
+    const envKeys = Object.keys(process.env);
+    console.log('【API健康检查】可用环境变量键:', envKeys);
 
     // 返回更详细的健康状态信息
     const responseData = {
@@ -31,6 +43,7 @@ export default function handler(req, res) {
       timestamp: new Date().toISOString(),
       apiKeyConfigured,
       apiUrlConfigured,
+      accessCodeConfigured,
       platform: 'vercel',
       environment: process.env.NODE_ENV || 'unknown',
       vercelEnv: process.env.VERCEL_ENV || 'unknown',

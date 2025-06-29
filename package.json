@@ -10,7 +10,7 @@
     "analyze": "cross-env ANALYZE=true vite build",
     "clean-repo": "bash ./setup-clean-repo.sh",
     "clean-repo:win": "setup-clean-repo.bat",
-    "vercel-build": "vite build"
+    "vercel-build": "VERCEL=1 vite build --mode production"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",
