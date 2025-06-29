@@ -44,9 +44,9 @@ docker-compose -f docker-compose.prod.yml up -d
 
 ### 2. Vercel部署（基本功能）
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fyourusername%2Faichat)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FXD06%2Fchatui)
 
-1. 点击上方按钮，或手动导入仓库到Vercel
+1. 点击上方按钮，直接从GitHub仓库导入项目到Vercel
 2. 在Vercel项目设置中添加以下环境变量:
    - `API_KEY`: 你的OpenAI API密钥
    - `WEBSITE_CODE`: (可选) 访问密码
@@ -55,9 +55,9 @@ Vercel部署现已支持流式响应和所有主要功能，与Docker部署体�
 
 ### 3. Netlify部署（基本功能）
 
-[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/yourusername/aichat)
+[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/XD06/chatui)
 
-1. 点击上方按钮，或手动导入仓库到Netlify
+1. 点击上方按钮，直接从GitHub仓库导入项目到Netlify
 2. 在Netlify项目设置中添加以下环境变量:
    - `API_KEY`: 你的OpenAI API密钥
    - `WEBSITE_CODE`: (可选) 访问密码
