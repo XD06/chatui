@@ -10,16 +10,27 @@ let isBackendAvailable = null; // null表示未检查，true表示可用，false
 const getApiBaseUrl = () => {
   // 检测当前部署环境
   const hostname = window.location.hostname;
+  const isVercel = hostname.includes('vercel.app') || (typeof window !== 'undefined' && window.VERCEL);
+  const isNetlify = hostname.includes('netlify.app') || hostname.includes('netlify.com');
+  
+  console.log('【环境检测】当前主机名:', hostname);
+  console.log('【环境检测】是否Vercel环境:', isVercel);
+  console.log('【环境检测】是否Netlify环境:', isNetlify);
   
   // Netlify部署环境
-  if (hostname.includes('netlify.app') || hostname.includes('netlify.com')) {
-    console.log('检测到Netlify部署环境');
+  if (isNetlify) {
+    console.log('【环境检测】检测到Netlify部署环境, 使用路径: /.netlify/functions');
     return '/.netlify/functions';
   }
   
-  // Vercel部署环境 (默认)
-  // 包括vercel.app域名或自定义域名
-  console.log('使用默认API路径 (Vercel或本地开发环境)');
+  // Vercel部署环境
+  if (isVercel) {
+    console.log('【环境检测】检测到Vercel部署环境, 使用路径: /api');
+    return '/api';
+  }
+  
+  // 默认环境 (本地开发或其他部署)
+  console.log('【环境检测】使用默认API路径: /api (本地开发环境或其他部署)');
   return '/api';
 };
 
@@ -37,16 +48,22 @@ export const checkBackendAvailability = async () => {
   console.log('【检查后端API】开始检查后端API可用性');
   
   try {
-    console.log('【检查后端API】发送请求到:', `${getApiBaseUrl()}/health`);
-    const response = await fetch(`${getApiBaseUrl()}/health`, {
+    const apiUrl = `${getApiBaseUrl()}/health`;
+    console.log('【检查后端API】发送请求到:', apiUrl);
+    
+    console.time('【检查后端API】请求耗时');
+    const response = await fetch(apiUrl, {
       method: 'GET',
-      timeout: 3000, // 3秒超时
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store' // 禁用缓存
     });
+    console.timeEnd('【检查后端API】请求耗时');
+    
+    console.log('【检查后端API】响应状态:', response.status, response.statusText);
     
     if (response.ok) {
       const data = await response.json();
-      console.log('【检查后端API】收到响应:', data);
+      console.log('【检查后端API】收到响应数据:', JSON.stringify(data, null, 2));
       isBackendAvailable = data && data.status === 'ok' && data.apiKeyConfigured;
       console.log(`【检查后端API】状态: ${isBackendAvailable ? '可用' : '不可用'}, 原因:`, 
                   !data ? 'data为空' : 
@@ -55,11 +72,19 @@ export const checkBackendAvailability = async () => {
       return isBackendAvailable;
     } else {
       console.log('【检查后端API】请求失败, 状态码:', response.status);
+      try {
+        const errorText = await response.text();
+        console.log('【检查后端API】错误详情:', errorText);
+      } catch (e) {
+        console.log('【检查后端API】无法读取错误详情:', e);
+      }
       isBackendAvailable = false;
       return false;
     }
   } catch (error) {
-    console.log('【检查后端API】检查失败, 错误:', error);
+    console.log('【检查后端API】检查失败, 错误类型:', error.name);
+    console.log('【检查后端API】错误消息:', error.message);
+    console.log('【检查后端API】完整错误:', error);
     isBackendAvailable = false;
     return false;
   }
